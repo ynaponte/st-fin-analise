@@ -7,8 +7,25 @@ authors = [
     { name = "Ynã Ponte", email = "ynaqp@alu.ufc.br" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "numpy>=2.4.6",
+    "pandas>=3.0.3",
+    "plotly>=6.8.0",
+    "pyarrow>=24.0.0",
+    "rich>=15.0.0",
+    "scikit-learn>=1.9.0",
+    "scipy>=1.17.1",
+    "statsmodels>=0.14.6",
+    "yfinance>=1.4.1",
+]
 
 [build-system]
 requires = ["uv_build>=0.8.14,<0.9.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.155.2",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+]

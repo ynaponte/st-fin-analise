@@ -25,9 +25,14 @@ def dfa(series: pd.Series) -> tuple[float, float]:
     y = np.cumsum(x - np.mean(x))
     
     # 2. Define scale sizes (s)
-    scale_min = 10
-    scale_max = max(scale_min + 5, N // 6)
+    # Kantelhardt recommends scale_min = 4 and scale_max = N // 4
+    scale_min = 4
+    scale_max = max(scale_min + 2, N // 4)
     scales = np.unique(np.logspace(np.log10(scale_min), np.log10(scale_max), num=20, dtype=int))
+    
+    # Ensure at least a few points for regression
+    if len(scales) < 4:
+        scales = np.arange(scale_min, max(scale_min + 4, scale_max + 1))
     
     fluctuations = []
     for s in scales:

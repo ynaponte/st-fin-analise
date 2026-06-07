@@ -11,13 +11,15 @@ def fd_bins(series: pd.Series) -> int:
     n = len(x)
     if n <= 1:
         return 1
+    val_range = np.max(x) - np.min(x)
+    if val_range < 1e-12:
+        return 1
     q75, q25 = np.percentile(x, [75, 25])
     iqr = q75 - q25
     if iqr == 0:
         # Fallback to Sturges rule if IQR is 0
         return int(np.ceil(np.log2(n) + 1))
     h = 2 * iqr * (n ** (-1/3))
-    val_range = np.max(x) - np.min(x)
     if h == 0:
         return 1
     return int(np.clip(np.ceil(val_range / h), 1, 1000))

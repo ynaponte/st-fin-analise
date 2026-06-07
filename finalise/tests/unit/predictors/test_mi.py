@@ -12,7 +12,7 @@ def test_ut_mi_cross():
     y = y.dropna()
     x = x.loc[y.index]
     
-    res = mi.cross_mi_lags(x, y, lag_max=5, alpha=0.05, k=3)
+    res = mi.cross_mi_lags(x, y, lag_max=5, alpha=0.05, k=3, n_permutations=200)
     assert isinstance(res, dict)
     assert "mi_profile" in res
     assert "lag_opt" in res

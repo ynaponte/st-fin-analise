@@ -67,7 +67,18 @@ class TargetAnalysis:
             )
             scale_results["auto_mi_profile"] = auto_mi_profile
             scale_results["auto_mi_max"] = max(auto_mi_profile) if auto_mi_profile else 0.0
-            scale_results["auto_mi_significant"] = bool(scale_results["auto_mi_max"] > 0.05)
+            scale_results["auto_mi_opt_lag"] = opt_lag
+            
+            p_val, is_sig = entropy.auto_mi_significance(
+                ret,
+                lag_max=self.config.lag_max,
+                max_mi=scale_results["auto_mi_max"],
+                alpha=scale_alpha,
+                k=self.config.knn_k,
+                n_permutations=self.config.n_permutations
+            )
+            scale_results["auto_mi_p_value"] = p_val
+            scale_results["auto_mi_significant"] = is_sig
             
             # g. ACF/PACF
             acf_pacf_res = autocorrelation.acf_pacf(

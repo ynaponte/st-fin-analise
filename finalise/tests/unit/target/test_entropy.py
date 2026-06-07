@@ -58,3 +58,18 @@ def test_ut_ent_p01(lst):
     series = pd.Series(lst)
     h_val = entropy.shannon(series)
     assert h_val >= 0.0
+
+def test_ut_ent_06(white_noise):
+    # UT-ENT-06: auto_mi_significance of white noise is not significant
+    mi_profile, opt_lag = entropy.auto_mi(white_noise, lag_max=5, k=5)
+    max_mi = max(mi_profile)
+    p_val, is_sig = entropy.auto_mi_significance(
+        white_noise,
+        lag_max=5,
+        max_mi=max_mi,
+        alpha=0.05,
+        k=5,
+        n_permutations=50
+    )
+    assert isinstance(p_val, float)
+    assert is_sig is False

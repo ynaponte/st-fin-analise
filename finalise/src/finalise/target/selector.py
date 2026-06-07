@@ -36,8 +36,8 @@ def choose_horizon(results: dict) -> int:
     auto_mi_sig = best_metrics.get("auto_mi_significant", False)
     
     # Fallback to a threshold heuristic if not explicitly set
-    if not auto_mi_sig and best_metrics.get("auto_mi_max", 0.0) > 0.02:
-        auto_mi_sig = True
+    if "auto_mi_significant" not in best_metrics:
+        auto_mi_sig = best_metrics.get("auto_mi_max", 0.0) > 0.02
         
     if h_diff < 0.05 and not auto_mi_sig:
         console = Console()

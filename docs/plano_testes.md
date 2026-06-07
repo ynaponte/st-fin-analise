@@ -1,6 +1,6 @@
 # Plano de Testes — `finalise`
 
-**Versão**: v1.0.0
+**Versão**: v1.0.1
 
 ---
 
@@ -218,6 +218,7 @@ def prices_real():
 | UT-GRA-02 | Granger não rejeita H0 para séries independentes | Determinístico | Sintético |
 | UT-GRA-03 | Teste usa exatamente o lag τ* passado como argumento | Determinístico | Sintético |
 | UT-GRA-04 | Decisão usa α vigente (0.02 vs 0.05) corretamente | Determinístico | Sintético |
+| UT-GRA-05 | Entradas devem ser séries I(0) estacionárias — resultado com série I(1) não é confiável (documental, não validado por asserção) | Determinístico | Sintético |
 
 ### `test_transfer_entropy.py`
 
@@ -235,8 +236,9 @@ def prices_real():
 |---|---|---|---|
 | UT-COI-01 | Engle-Granger detecta cointegração para par cointegrado sintético | Determinístico | Sintético |
 | UT-COI-02 | Engle-Granger não detecta cointegração para passeios aleatórios independentes | Determinístico | Sintético |
-| UT-COI-03 | Entrada deve ser preços brutos — erro explícito se passar log-retornos | Determinístico | Sintético |
+| UT-COI-03 | Entrada deve ser preços brutos — erro explícito (`ValueError`) se passar log-retornos (valores negativos) | Determinístico | Sintético |
 | UT-COI-04 | Spread retornado é I(0) quando cointegração é detectada | Determinístico | Sintético |
+| UT-COI-05 | Retorno inclui campos `beta` e `alpha_const` da regressão OLS | Determinístico | Sintético |
 
 ### `test_selector.py` (predictors)
 
@@ -305,8 +307,9 @@ def prices_real():
 | IT-P-03 | Pipeline seleciona candidato correto para série com causalidade linear plantada |
 | IT-P-04 | Pipeline seleciona candidato correto para série com dependência não-linear plantada |
 | IT-P-05 | α herdado de `ta.alpha` é usado em todos os testes do pipeline |
-| IT-P-06 | `cointegration` em `pa.results` opera sobre preços brutos, não log-retornos |
-| IT-P-07 | `pa.report()` executa sem erro e retorna figuras plotly |
+| IT-P-06 | `pa.cointegration` opera sobre preços brutos I(1), não log-retornos — pares acessíveis via `pa.cointegration[ticker]` |
+| IT-P-07 | Candidatos no pipeline de seleção (MI, Granger, TE) são log-retornos I(0), verificados pela ausência de tendência unitária (ADF) |
+| IT-P-08 | `pa.report()` executa sem erro e retorna figuras plotly |
 
 ### `test_model_pipeline.py`
 

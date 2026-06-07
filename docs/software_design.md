@@ -1,6 +1,6 @@
 # Software Design Document (SDD) — `finalise`
 
-**Versão**: v1.0.0
+**Versão**: v1.0.1
 
 ## 1. Escopo
 
@@ -47,7 +47,7 @@ finalise/
 
 - **R-G1** — Toda análise é estritamente causal: nenhum cálculo em t utiliza dados posteriores a t.
 - **R-G2** — A série alvo é configurada em `config`. Não é intercambiável em runtime.
-- **R-G3** — Preços brutos (I(1)) são usados exclusivamente em cointegração. Todas as demais análises operam sobre log-retornos (I(0)).
+- **R-G3** — O submódulo `predictors` opera com duas representações dos dados em paralelo: **preços brutos (I(1))** para o teste de cointegração de Engle-Granger e **log-retornos (I(0))** para todos os demais testes (MI cruzada, Granger, TE, decomposição STL, suavização). `PredictorAnalysis` recebe `prices_dict` (preços brutos) e calcula log-retornos internamente. O submódulo `target` opera exclusivamente sobre log-retornos.
 - **R-G4** — Suavização é aplicada exclusivamente às séries preditoras, nunca à série alvo.
 - **R-G5** — Shift de séries suavizadas para compensar atraso de fase é proibido: introduz look-ahead bias.
 - **R-G6** — Bins de histogramas estimados por Freedman-Diaconis em todo o pacote.
@@ -121,10 +121,14 @@ ta.report()    # resumo executivo + gráficos
 
 ## 6. Submódulo `finalise.predictors`
 
+> **Nota sobre dados de entrada:** Este submódulo recebe `prices_dict` (preços brutos) e a `target_series` (log-retornos do alvo, produzida pela Fase 1). Internamente, mantém dois fluxos de dados:
+> - **Preços brutos I(1)** — utilizados exclusivamente no teste de Engle-Granger (Seção 6.2, `cointegration`).
+> - **Log-retornos I(0)** — calculados via `returns.compute` e utilizados em todo o pipeline de seleção (MI, Granger, TE) e na geração de candidatos (STL, suavização).
+
 ### 6.1 Geração de candidatos
 
 **`returns.compute(prices, k, overlapping=False)`**
-Idêntico ao `target.returns.compute`. Log-retornos das séries preditoras no horizonte k herdado da Fase 1.
+Reutiliza `target.returns.compute`. Converte os preços brutos de cada preditor em log-retornos no horizonte k* herdado da Fase 1. Estes log-retornos alimentam a expansão de candidatos e o pipeline de seleção. Os preços brutos originais são preservados separadamente para cointegração.
 
 **`decomposition.stl(series, period)`**
 Decomposição STL da série de log-retornos. Retorna dict `{trend, seasonal, residual}`. Período configurável via `config`. Cada componente é uma série indexada por data, estritamente causal.
@@ -135,27 +139,29 @@ Aplica MA sem shift. Métodos suportados: SMA, EMA, DEMA, TMA, Gaussiana.
 **`smoothing.group_delay(window, method)`**
 Retorna atraso em amostras. Uso exclusivo para documentação e visualização.
 
-Expansão de candidatos por preditor X:
+Expansão de candidatos por preditor X (todos derivados de log-retornos):
 ```
 {X_bruto, X_suavizado, X_tendência, X_sazonalidade, X_resíduo}
 ```
 
 ### 6.2 Pipeline de seleção
 
-**`mi.cross_mi_lags(x, y, lag_max)`**
-MI entre `x(t−τ)` e `y(t)` para τ = 1..lag_max. Estimador Kraskov k-NN. Retorna perfil MI(τ) e τ* = argmax. Significância por Bonferroni: threshold por lag = α / lag_max.
-
-**`granger.test(x, y, lag)`**
-Teste de Granger de x → y no lag τ*. Retorna p-valor e decisão ao nível α vigente.
-
-**`transfer_entropy.compute(x, y, lag)`**
-TE de x → y no lag τ*. Bins por Freedman-Diaconis. Significância por teste de permutação (N configurável, padrão 500). TE é significativa se superar o percentil (1 − α) da distribuição nula.
+> Os testes abaixo (MI, Granger, TE) operam sobre **log-retornos I(0)** — séries estacionárias, conforme exigido pelos pressupostos estatísticos. O teste de cointegração, por sua vez, opera sobre **preços brutos I(1)** e é executado separadamente, antes da expansão de candidatos.
 
 **`cointegration.engle_granger(price_x, price_y)`**
-Teste de Engle-Granger sobre preços brutos (I(1)). Retorna estatística, p-valor e spread. Independente do pipeline de log-retornos.
+Teste de Engle-Granger sobre **preços brutos (I(1))**. Executado para cada par (preditor, alvo) antes da geração de candidatos. Retorna estatística, p-valor, spread e coeficientes da regressão. Levanta `ValueError` se receber séries com valores negativos (indicativo de log-retornos). Resultados armazenados em `pa.cointegration` — independentes do pipeline de log-retornos.
+
+**`mi.cross_mi_lags(x, y, lag_max)`**
+MI entre `x(t−τ)` e `y(t)` para τ = 1..lag_max. Entradas: log-retornos I(0). Estimador Kraskov k-NN. Retorna perfil MI(τ) e τ* = argmax. Significância por Bonferroni: threshold por lag = α / lag_max.
+
+**`granger.test(x, y, lag)`**
+Teste de Granger de x → y no lag τ*. Entradas: log-retornos I(0) (requisito de estacionaridade). Retorna p-valor e decisão ao nível α vigente.
+
+**`transfer_entropy.compute(x, y, lag)`**
+TE de x → y no lag τ*. Entradas: log-retornos I(0). Bins por Freedman-Diaconis. Significância por teste de permutação (N configurável, padrão 500). TE é significativa se superar o percentil (1 − α) da distribuição nula.
 
 **`selector.select(candidates, target, config)`**
-Pipeline de decisão aplicado a cada candidato individualmente:
+Pipeline de decisão aplicado a cada candidato individualmente (todos candidatos são derivados de log-retornos):
 
 ```
 para cada candidato c em {X_bruto, X_suavizado, X_tendência, X_sazonalidade, X_resíduo}:
@@ -177,14 +183,18 @@ Resumo executivo via `rich` com: candidatos avaliados vs. selecionados por predi
 
 ### 6.4 API pública (`predictors/__init__.py`)
 
-**`PredictorAnalysis(prices_dict, target_series, config)`**
+**`PredictorAnalysis(prices_dict, target_series, config, alpha=None)`**
+
+- `prices_dict`: `dict[str, pd.Series]` — preços brutos de todos os ativos (alvo + preditores). Usado para cointegração (I(1)) e para cálculo interno de log-retornos (I(0)).
+- `target_series`: `pd.Series` — log-retornos do alvo no horizonte k* selecionado pela Fase 1.
+- `alpha`: nível de significância herdado de `ta.alpha` (0.05 ou 0.02).
 
 ```python
-pa = PredictorAnalysis(prices_dict, target_series, config)
-pa.run()            # gera candidatos, roda pipeline de seleção
+pa = PredictorAnalysis(prices_dict, target_series, config, alpha=ta.alpha)
+pa.run()            # cointegração sobre preços brutos + geração de candidatos (log-retornos) + pipeline de seleção
 pa.selected         # lista de candidatos selecionados com metadados
-pa.cointegration    # resultados de cointegração por par de preços
-pa.results          # dict completo com MI, Granger, TE por candidato
+pa.cointegration    # resultados de cointegração por par de preços brutos
+pa.results          # dict completo com MI, Granger, TE por candidato (log-retornos)
 pa.report()         # resumo executivo + gráficos
 ```
 

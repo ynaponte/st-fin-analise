@@ -1,6 +1,6 @@
 # Software Architecture Document — `finalise`
 
-**Versão**: v1.0.0
+**Versão**: v1.0.1
 
 ---
 
@@ -177,15 +177,19 @@ flowchart TD
 flowchart TD
     START(["PredictorAnalysis.run()"])
 
-    START --> COINTE["cointegration.engle_granger(\n  price_alvo, price_preditor\n)\nsobre preços brutos I(1)"]
+    START --> INPUT["prices_dict\npreços brutos I(1)\n+ target_series log-retornos I(0)"]
 
-    COINTE --> RETS["returns.compute(prices, k*)\nnon-overlapping\nk* herdado de ta.horizon"]
+    INPUT -->|"preços brutos I(1)"| COINTE["cointegration.engle_granger(\n  price_alvo, price_preditor\n)\nsobre preços brutos I(1)\n⚠ ValueError se receber log-retornos"]
 
-    RETS --> EXPAND["Expansão de candidatos por preditor X"]
+    INPUT -->|"preços brutos I(1)"| RETS["returns.compute(prices, k*)\nconverte preços brutos → log-retornos I(0)\nnon-overlapping\nk* herdado de ta.horizon"]
 
-    EXPAND --> BRUTO["X_bruto\nr_k(t)"]
-    EXPAND --> SUAV["X_suavizado\nsmoothing.apply(X, window, method)"]
-    EXPAND --> STL["decomposition.stl(X, period)\nSTL sobre r_k(t)"]
+    COINTE --> COINT_RES["pa.cointegration\n{ticker: {statistic, p_value,\nis_cointegrated, spread, beta}}"]
+
+    RETS --> EXPAND["Expansão de candidatos por preditor X\ntodos derivados de log-retornos I(0)"]
+
+    EXPAND --> BRUTO["X_bruto\nr_k(t) — I(0)"]
+    EXPAND --> SUAV["X_suavizado\nsmoothing.apply(X, window, method)\n— I(0)"]
+    EXPAND --> STL["decomposition.stl(X, period)\nSTL sobre r_k(t) — I(0)"]
 
     STL --> TREND["X_tendência"]
     STL --> SEAS["X_sazonalidade"]
@@ -193,20 +197,20 @@ flowchart TD
 
     BRUTO & SUAV & TREND & SEAS & RESID --> PIPELINE
 
-    subgraph PIPELINE["Pipeline de seleção — por candidato c"]
+    subgraph PIPELINE["Pipeline de seleção — por candidato c (log-retornos I(0))"]
         direction TB
-        MI["mi.cross_mi_lags(c, alvo, lag_max)\nKraskov k-NN\nτ* = argmax MI(τ)\nBonferroni: threshold = α / lag_max"]
+        MI["mi.cross_mi_lags(c, alvo, lag_max)\nentradas: I(0)\nKraskov k-NN\nτ* = argmax MI(τ)\nBonferroni: threshold = α / lag_max"]
 
         MI --> MISIG{{"MI(τ*) significativa?"}}
         MISIG -->|"não"| DISCARD1["descartar c"]
         MISIG -->|"sim"| GRANGER
 
-        GRANGER["granger.test(c, alvo, lag=τ*)\np-valor ao nível α"]
+        GRANGER["granger.test(c, alvo, lag=τ*)\nentradas: I(0) — requisito de estacionaridade\np-valor ao nível α"]
         GRANGER --> GSIG{{"rejeita H0?"}}
         GSIG -->|"sim"| INCLUDE_L["incluir c\ntipo: linear"]
         GSIG -->|"não"| TE
 
-        TE["transfer_entropy.compute(c, alvo, lag=τ*)\nbins: Freedman-Diaconis\nteste de permutação N=500"]
+        TE["transfer_entropy.compute(c, alvo, lag=τ*)\nentradas: I(0)\nbins: Freedman-Diaconis\nteste de permutação N=500"]
         TE --> TESIG{{"TE significativa?\n> percentil (1−α) da nula"}}
         TESIG -->|"sim"| INCLUDE_NL["incluir c\ntipo: não-linear"]
         TESIG -->|"não"| DISCARD2["descartar c"]

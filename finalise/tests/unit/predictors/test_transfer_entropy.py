@@ -54,3 +54,20 @@ def test_ut_te_compute():
     assert res_short["te"] == 0.0
     assert res_short["p_value"] == 1.0
     assert res_short["is_significant"] is False
+
+def test_ut_te_multiple_y_lags():
+    # Test compute_te and compute functions with multiple y_lags
+    rng = np.random.default_rng(42)
+    n = 200
+    x = pd.Series(rng.standard_normal(n))
+    y = pd.Series(np.zeros(n))
+    for t in range(2, n):
+        y.iloc[t] = 0.2 * y.iloc[t-1] + 0.1 * y.iloc[t-2] + 0.5 * (x.iloc[t-1] ** 2) + 0.1 * rng.standard_normal()
+        
+    te_val = transfer_entropy.compute_te(x, y, lag=1, y_lags=2)
+    assert te_val >= 0.0
+    
+    res = transfer_entropy.compute(x, y, lag=1, alpha=0.05, n_permutations=20, y_lags=[1, 2])
+    assert isinstance(res, dict)
+    assert res["te"] == te_val
+    assert "p_value" in res

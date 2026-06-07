@@ -22,6 +22,10 @@ def select(candidates: dict, target: pd.Series, config, alpha: float, results: O
     4. Else, discards.
     """
     from . import mi, granger, transfer_entropy
+    from finalise.target import entropy
+    
+    # Compute target auto-MI optimal lag for Transfer Entropy embedding dimension
+    _, target_opt_lag = entropy.auto_mi(target, lag_max=config.lag_max, k=config.knn_k)
     
     selected_list = []
     
@@ -72,7 +76,8 @@ def select(candidates: dict, target: pd.Series, config, alpha: float, results: O
                 c_series, target,
                 lag=tau,
                 alpha=alpha,
-                n_permutations=config.n_permutations
+                n_permutations=config.n_permutations,
+                y_lags=target_opt_lag
             )
             
             if results is not None:

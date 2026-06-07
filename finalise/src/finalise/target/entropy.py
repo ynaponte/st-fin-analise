@@ -26,24 +26,37 @@ def fd_bins(series: pd.Series) -> int:
 
 def shannon(series: pd.Series) -> float:
     """
-    Calculates the Shannon entropy of the series in nats,
+    Calculates the normalized Shannon entropy of the series in nats,
     estimating bins with the Freedman-Diaconis rule.
+    Normalized by log(n_bins) if n_bins > 1 to allow comparison across scales.
     """
     x = np.asarray(series)
     n_bins = fd_bins(series)
+    if n_bins <= 1:
+        return 0.0
     counts, _ = np.histogram(x, bins=n_bins)
     probs = counts / len(x)
     probs = probs[probs > 0]
-    return float(max(0.0, -np.sum(probs * np.log(probs))))
+    h_discrete = -np.sum(probs * np.log(probs))
+    return float(max(0.0, h_discrete / np.log(n_bins)))
 
 def ksg_mi(x: np.ndarray, y: np.ndarray, k: int = 5) -> float:
     """
     Calculates the Mutual Information between x and y using the
     Kraskov-Stögbauer-Grassberger (KSG) k-NN estimator.
     """
-    x = x.reshape(-1, 1)
-    y = y.reshape(-1, 1)
+    x = x.astype(float).reshape(-1, 1)
+    y = y.astype(float).reshape(-1, 1)
     N = len(x)
+    if N <= k + 1:
+        return 0.0
+        
+    # Add a tiny jitter to break ties/duplicates (standard KSG practice)
+    rng = np.random.default_rng(42)
+    x_std = np.std(x)
+    y_std = np.std(y)
+    x = x + 1e-10 * rng.standard_normal(x.shape) * (x_std if x_std > 0 else 1.0)
+    y = y + 1e-10 * rng.standard_normal(y.shape) * (y_std if y_std > 0 else 1.0)
     
     # Combined joint space Z = (X, Y)
     xy = np.hstack([x, y])
@@ -87,3 +100,38 @@ def auto_mi(series: pd.Series, lag_max: int, k: int = 5) -> tuple[list[float], i
         
     opt_lag = int(np.argmax(mi_profile) + 1) if len(mi_profile) > 0 else 1
     return mi_profile, opt_lag
+
+def auto_mi_significance(
+    series: pd.Series,
+    lag_max: int,
+    max_mi: float,
+    alpha: float = 0.05,
+    k: int = 5,
+    n_permutations: int = 100
+) -> tuple[float, bool]:
+    """
+    Runs a permutation test to determine the significance of the maximum auto-MI.
+    Under the null hypothesis of independence, shuffles the series and computes the max auto-MI.
+    Returns:
+      - p_value: empirical p-value of the observed maximum auto-MI.
+      - is_significant: True if p_value < alpha.
+    """
+    if len(series) <= lag_max + k + 1 or max_mi <= 0.0:
+        return 1.0, False
+        
+    rng = np.random.default_rng(42)
+    series_values = np.asarray(series)
+    
+    max_null_mis = []
+    for _ in range(n_permutations):
+        perm_series = rng.permutation(series_values)
+        perm_profile = []
+        for lag in range(1, lag_max + 1):
+            x = perm_series[lag:]
+            y = perm_series[:-lag]
+            perm_profile.append(ksg_mi(x, y, k=k))
+        max_null_mis.append(max(perm_profile) if perm_profile else 0.0)
+        
+    p_value = float(np.mean(np.array(max_null_mis) >= max_mi))
+    is_significant = bool(p_value < alpha)
+    return p_value, is_significant

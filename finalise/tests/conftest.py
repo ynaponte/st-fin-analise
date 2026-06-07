@@ -11,9 +11,19 @@ def white_noise():
 
 @pytest.fixture
 def persistent_series():
-    # passeio aleatório com drift — H > 0.5
+    # Fractional Gaussian noise with H=0.75 (persistent, stationary I(0)).
+    # Generated via Hosking's method: Cholesky decomposition of the fGn
+    # autocovariance matrix  γ(k) = 0.5*(|k-1|^(2H) - 2|k|^(2H) + |k+1|^(2H)).
     rng = np.random.default_rng(42)
-    return pd.Series(np.cumsum(rng.standard_normal(1200)) + 0.001)
+    n = 1200
+    H = 0.75
+    gamma = np.zeros(n)
+    for k in range(n):
+        gamma[k] = 0.5 * (abs(k - 1) ** (2 * H) - 2 * abs(k) ** (2 * H) + abs(k + 1) ** (2 * H))
+    C = np.linalg.cholesky(
+        np.array([[gamma[abs(i - j)] for j in range(n)] for i in range(n)])
+    )
+    return pd.Series(C @ rng.standard_normal(n))
 
 @pytest.fixture
 def antipersistent_series():
@@ -21,6 +31,12 @@ def antipersistent_series():
     rng = np.random.default_rng(42)
     s = rng.standard_normal(1200)
     return pd.Series(s - 0.5 * np.roll(s, 1))
+
+@pytest.fixture
+def random_walk():
+    # Passeio aleatório (I(1), não-estacionário) — para testes de raiz unitária.
+    rng = np.random.default_rng(42)
+    return pd.Series(np.cumsum(rng.standard_normal(1200)))
 
 @pytest.fixture
 def prices_synthetic():

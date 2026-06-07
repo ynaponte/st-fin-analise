@@ -1,5 +1,4 @@
 import pandas as pd
-import scipy.stats as stats_api
 from scipy.stats import anderson
 from rich.console import Console
 from rich.table import Table

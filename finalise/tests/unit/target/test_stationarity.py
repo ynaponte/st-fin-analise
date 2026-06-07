@@ -10,15 +10,15 @@ def test_ut_stat_01(white_noise):
     # The statistic should be negative and lower than 5% critical value
     assert res["statistic"] < res["critical_values"]["5%"]
 
-def test_ut_stat_02(persistent_series):
-    # UT-STAT-02: ADF does not reject H0 (is_stationary=False) for random walk
-    res = stationarity.adf(persistent_series, alpha=0.05)
+def test_ut_stat_02(random_walk):
+    # UT-STAT-02: ADF does not reject H0 (is_stationary=False) for random walk (I(1))
+    res = stationarity.adf(random_walk, alpha=0.05)
     assert res["is_stationary"] is False
 
-def test_ut_stat_03(persistent_series):
+def test_ut_stat_03(random_walk):
     # UT-STAT-03: Non-stationary series emits warning
     with pytest.warns(UserWarning, match="Série não estacionária"):
-        res = stationarity.adf(persistent_series, alpha=0.05)
+        res = stationarity.adf(random_walk, alpha=0.05)
     assert res["is_stationary"] is False
 
 def test_ut_stat_04(white_noise):

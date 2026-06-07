@@ -4,9 +4,18 @@ import pandas as pd
 def dfa(series: pd.Series) -> tuple[float, float]:
     """
     Computes the Hurst exponent using Detrended Fluctuation Analysis (DFA).
-    Returns a tuple (H, abs(H - 0.5)).
-    
-    If the computed scaling exponent alpha is >= 1.0, it is mapped to H = alpha - 1.0.
+
+    The input series must be stationary (I(0)), e.g. log-returns.
+    The DFA integrates the series internally (cumulative sum of deviations
+    from the mean) and then estimates the scaling exponent α from
+    fluctuation vs. scale in log-log space.
+
+    Mapping of the DFA scaling exponent α to the Hurst exponent H
+    (Peng et al., 1994; Kantelhardt, 2002):
+      - For stationary input (fGn / I(0)):  α ∈ (0, 1)  →  H = α
+      - For non-stationary input (fBm / I(1)):  α ∈ (1, 2)  →  H = α − 1
+
+    Returns a tuple ``(H, |H − 0.5|)``.
     H is clipped to the interval (0.001, 0.999).
     """
     x = np.asarray(series)
@@ -44,9 +53,11 @@ def dfa(series: pd.Series) -> tuple[float, float]:
     except Exception:
         alpha = 0.5
         
-    # Map alpha to H
+    # Map DFA scaling exponent α to Hurst exponent H.
+    # Stationary input (fGn / I(0)):  α ∈ (0, 1) → H = α
+    # Non-stationary input (fBm / I(1)):  α ∈ (1, 2) → H = α − 1
     if alpha >= 1.0:
-        H = 0.5 + (alpha - 1.0) / 2.0
+        H = alpha - 1.0
     else:
         H = alpha
         

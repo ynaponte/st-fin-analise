@@ -52,7 +52,6 @@ def select(candidates: dict, target: pd.Series, config, alpha: float, results: O
         mi_val = mi_res["mi_profile"][tau - 1]
         
         # 2. Granger causality requires stationarity and is not applied to STL components (user directive)
-        from finalise.target import stationarity
         adf_res = stationarity.adf(c_series, alpha=alpha)
         
         is_stl_component = component in ["tendencia", "sazonalidade", "residuo"]

@@ -132,7 +132,9 @@ def compute(
         
     threshold = float(np.percentile(null_dist, (1.0 - alpha) * 100))
     is_significant = bool(te_obs > threshold)
-    p_val = float(np.mean(np.array(null_dist) >= te_obs))
+    # Phipson-Smyth correction: avoids p=0 and is consistent with mi.py
+    count = sum(1 for v in null_dist if v >= te_obs)
+    p_val = float((count + 1) / (n_permutations + 1))
     
     return {
         "te": te_obs,

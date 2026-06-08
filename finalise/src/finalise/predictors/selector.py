@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import pandas as pd
 from typing import List, Optional
+from finalise.target import stationarity
+
 
 @dataclass
 class SelectedCandidate:
@@ -49,12 +51,25 @@ def select(candidates: dict, target: pd.Series, config, alpha: float, results: O
         tau = mi_res["lag_opt"]
         mi_val = mi_res["mi_profile"][tau - 1]
         
-        # 2. Granger causality
-        granger_res = granger.test(
-            c_series, target,
-            lag=tau,
-            alpha=alpha
-        )
+        # 2. Granger causality requires stationarity and is not applied to STL components (user directive)
+        from finalise.target import stationarity
+        adf_res = stationarity.adf(c_series, alpha=alpha)
+        
+        is_stl_component = component in ["tendencia", "sazonalidade", "residuo"]
+        
+        if adf_res["is_stationary"] and not is_stl_component:
+            granger_res = granger.test(
+                c_series, target,
+                lag=tau,
+                alpha=alpha
+            )
+        else:
+            # Bypass Granger if predictor candidate is non-stationary or is an STL component
+            granger_res = {
+                "p_value": 1.0,
+                "is_causal": False,
+                "statistic": 0.0
+            }
         
         if results is not None:
             results[(ticker, component)]["granger"] = granger_res

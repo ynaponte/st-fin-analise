@@ -4,7 +4,7 @@ from statsmodels.tsa.seasonal import STL
 
 def stl(series: pd.Series, period: int) -> dict:
     """
-    Computes a causal STL decomposition of the closing prices.
+    Computes a causal STL decomposition of the raw price series.
     Returns a dictionary of pandas Series: {'trend', 'seasonal', 'residual'}.
     No value at time t uses data from after time t.
     """

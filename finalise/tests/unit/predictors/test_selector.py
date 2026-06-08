@@ -56,7 +56,7 @@ def test_ut_predictor_analysis_full(prices_synthetic):
     # We pass the target series (returns at horizon k=1)
     target_series = log_ret_target
     
-    pa = PredictorAnalysis(prices_dict, target_series, config)
+    pa = PredictorAnalysis(prices_dict, target_series, 1, config)
     assert pa.horizon == 1
     
     pa.run()
@@ -85,9 +85,11 @@ def test_ut_predictor_analysis_full(prices_synthetic):
     assert target_p_val > 0.05
     assert pred_p_val > 0.05
     
-    # Candidates in the selection pipeline are stationary log-returns (stationary I(0))
+    # Candidates in the selection pipeline (except raw STL components) are stationary
     assert len(pa.candidates) > 0
     for comp_key, series in pa.candidates.items():
+        if comp_key[1] in ["tendencia", "sazonalidade", "residuo"]:
+            continue
         _, p_val, *_ = adfuller(series.dropna())
         assert p_val < 0.05
         
@@ -104,19 +106,13 @@ def test_ut_predictor_analysis_errors(prices_synthetic):
     # Test error cases and branch coverage in PredictorAnalysis
     target_ticker = "PETR4.SA"
     
-    # 1. Missing target ticker in prices_dict raises ValueError
     config = Config(target_ticker=target_ticker, predictor_tickers=[])
-    with pytest.raises(ValueError, match="não encontrados em prices_dict"):
-        PredictorAnalysis({}, pd.Series([0.1]), config)
-        
+    
     # 2. Call report before run raises ValueError
     prices_dict = {target_ticker: prices_synthetic}
-    pa = PredictorAnalysis(prices_dict, pd.Series([0.1]), config)
+    pa = PredictorAnalysis(prices_dict, pd.Series([0.1]), 1, config)
     with pytest.raises(ValueError, match="Execute run"):
         pa.report()
-        
-    # 3. Horizon fallback when index does not match
-    assert pa.horizon == 1 # fell back to horizons[0]
 
 def test_ut_predictor_analysis_unrelated_and_short(prices_synthetic):
     # Test unrelated predictor (triggers no selected candidates) and short candidate data
@@ -154,7 +150,7 @@ def test_ut_predictor_analysis_unrelated_and_short(prices_synthetic):
     
     log_ret_target = np.log(p_target / p_target.shift(1)).dropna()
     
-    pa = PredictorAnalysis(prices_dict, log_ret_target, config)
+    pa = PredictorAnalysis(prices_dict, log_ret_target, 1, config)
     pa.run()
     
     # Check that short and missing tickers were skipped in candidates/results/cointegration

@@ -17,13 +17,13 @@ def test_ut_mi_cross():
     assert "mi_profile" in res
     assert "lag_opt" in res
     assert "is_significant" in res
-    assert "threshold" in res
+    assert "threshold_alpha" in res
     
     assert len(res["mi_profile"]) == 5
     # The optimal lag should be 2
     assert res["lag_opt"] == 2
     assert res["is_significant"] is True
-    assert res["threshold"] == 0.05 / 5
+    assert res["threshold_alpha"] == 0.05
 
 def test_ut_mi_unrelated():
     # Test cross_mi_lags on unrelated series (white noise)
@@ -33,7 +33,7 @@ def test_ut_mi_unrelated():
     
     res = mi.cross_mi_lags(x, y, lag_max=3, alpha=0.01, k=3)
     # Since they are unrelated, MI should be small or non-significant
-    assert res["threshold"] == 0.01 / 3
+    assert res["threshold_alpha"] == 0.01
     # Check handling of short series
     res_short = mi.cross_mi_lags(x.iloc[:5], y.iloc[:5], lag_max=3, alpha=0.05, k=3)
     assert res_short["is_significant"] is False

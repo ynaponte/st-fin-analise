@@ -64,11 +64,11 @@ def analyze(prices_dict: dict[str, pd.Series], config: Config) -> AnalysisResult
         
     # 3. Model
     console.print("\n[bold yellow]Fase 3: Modelagem Preditiva e Validação[/bold yellow]")
-    m = Model(pa.selected, target_series, config)
+    m = Model(pa.selected, target_series, config, horizon=ta.horizon)
     m.run()
     
-    status = "[green]VÁLIDO[/green]" if m.is_outlier else "[red]INVÁLIDO[/red]"
-    console.print(f"Resultado do Modelo: {status} (z-score = {m.z_score:.2f})")
+    # Exibir o Resumo Executivo Consolidado
+    m.report(target_analysis=ta, predictor_analysis=pa)
     
     console.print("\n[bold cyan]Pipeline Concluído com Sucesso[/bold cyan]")
     

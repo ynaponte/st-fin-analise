@@ -12,7 +12,7 @@ def test_ut_granger_causal():
     for t in range(1, n):
         y.iloc[t] = 0.5 * y.iloc[t-1] + 0.8 * x.iloc[t-1] + 0.2 * rng.standard_normal()
         
-    res = granger.test(x, y, lag=1, alpha=0.05)
+    res = granger.test(x, y, lag_max=1, alpha=0.05)
     assert isinstance(res, dict)
     assert "p_value" in res
     assert "is_causal" in res
@@ -28,17 +28,17 @@ def test_ut_granger_non_causal():
     x = pd.Series(rng.standard_normal(n))
     y = pd.Series(rng.standard_normal(n))
     
-    res = granger.test(x, y, lag=2, alpha=0.05)
+    res = granger.test(x, y, lag_max=2, alpha=0.05)
     # Since they are independent, it should not reject Granger causality (most of the time, so let's verify keys)
     assert "p_value" in res
     assert "is_causal" in res
     
     # Check handling of short series
-    res_short = granger.test(x.iloc[:5], y.iloc[:5], lag=2, alpha=0.05)
+    res_short = granger.test(x.iloc[:5], y.iloc[:5], lag_max=2, alpha=0.05)
     assert res_short["p_value"] == 1.0
     assert res_short["is_causal"] is False
     assert res_short["statistic"] == 0.0
     
     # Check negative/zero lag handled correctly
-    res_zero = granger.test(x, y, lag=0, alpha=0.05)
+    res_zero = granger.test(x, y, lag_max=0, alpha=0.05)
     assert "is_causal" in res_zero

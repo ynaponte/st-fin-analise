@@ -151,4 +151,15 @@ def select(
                 )
             )
 
-    return selected_list
+    # Deduplicate: if multiple components of the same ticker are selected,
+    # keep the one with the highest Transfer Entropy (or MI if TE is None).
+    best_per_ticker = {}
+    for c in selected_list:
+        score = c.te_value if c.te_value is not None else c.mi_value
+        if c.ticker not in best_per_ticker:
+            best_per_ticker[c.ticker] = (score, c)
+        else:
+            if score > best_per_ticker[c.ticker][0]:
+                best_per_ticker[c.ticker] = (score, c)
+                
+    return [c for _, c in best_per_ticker.values()]

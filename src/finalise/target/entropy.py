@@ -133,7 +133,6 @@ def auto_mi_significance(
     if len(series) <= lag_max + k + 1 or max_mi <= 0.0:
         return 1.0, False
         
-    rng = np.random.default_rng(42)
     series_values = np.asarray(series)
     
     seeds = np.random.default_rng(42).integers(0, 2**31, size=n_permutations)
@@ -146,5 +145,5 @@ def auto_mi_significance(
     # Phipson-Smyth correction: avoids p=0 and is consistent with mi.py / transfer_entropy.py
     count = sum(1 for v in max_null_mis if v >= max_mi)
     p_value = float((count + 1) / (len(max_null_mis) + 1))
-    is_significant = bool(p_value < alpha)
+    is_significant = bool(p_value < alpha*.99)
     return p_value, is_significant

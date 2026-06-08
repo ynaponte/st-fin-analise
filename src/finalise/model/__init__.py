@@ -7,10 +7,11 @@ from . import report
 from finalise.predictors.selector import SelectedCandidate
 
 class Model:
-    def __init__(self, selected: List[SelectedCandidate], target_series: pd.Series, config: Any):
+    def __init__(self, selected: List[SelectedCandidate], target_series: pd.Series, config: Any, horizon: int = None):
         self.selected = selected
         self.target_series = target_series
         self.config = config
+        self.horizon = horizon
         
         # Results
         self.is_outlier = False
@@ -21,39 +22,39 @@ class Model:
         self.results = {}
         self.model_obj = None
 
-    def run(self):
-        # 1. Build features
+    def build_data(self) -> tuple[pd.DataFrame, pd.Series]:
         X = features.build(self.selected)
         y = self.target_series
         
         if X.empty:
-            raise ValueError("Matriz de features vazia. Não é possível treinar o modelo.")
+            raise ValueError("Matriz de features vazia.")
             
-        # Alinha as features e o target, removendo NaNs
         common_idx = X.index.intersection(y.index)
         data = pd.concat([X.loc[common_idx], y.loc[common_idx]], axis=1).dropna()
         if data.empty:
             raise ValueError("Sem observações válidas após o alinhamento de X e y.")
             
-        X_clean = data[X.columns]
-        y_clean = data.iloc[:, -1]
+        return data[X.columns], data.iloc[:, -1]
+
+    def fit(self, X: pd.DataFrame, y: pd.Series):
+        self.model_obj, self.feature_importance = tree.fit(X, y, max_depth=5)
+
+    def predict(self, X: pd.DataFrame):
+        if self.model_obj is None:
+            raise ValueError("O modelo não foi treinado ou carregado.")
+        return self.model_obj.predict(X)
+
+    def validate(self, X: pd.DataFrame, y: pd.Series, n_agents: int = 1000):
+        if self.model_obj is None:
+            raise ValueError("O modelo não foi treinado ou carregado para validação.")
             
-        # 2. Treinar modelo
-        # Padrão: usar apenas max_depth=3 para evitar overfitting severo como base
-        self.model_obj, self.feature_importance = tree.fit(X_clean, y_clean, max_depth=5)
-        
-        # 3. Validação (Random Walk Backtest)
-        n_agents = 1000
         mod_ret, ag_rets = validation.random_walk_backtest(
-            self.model_obj, X_clean, y_clean, n_agents=n_agents, seed=42
+            self.model_obj, X, y, n_agents=n_agents, seed=42
         )
         
-        # Predições para métricas (apesar de termos simplificado no validation)
-        y_pred = self.model_obj.predict(X_clean)
+        y_pred = self.predict(X)
+        val_metrics = validation.metrics(y, y_pred, ag_rets, mod_ret)
         
-        val_metrics = validation.metrics(y_clean, y_pred, ag_rets, mod_ret)
-        
-        # Populando as propriedades públicas conforme o design doc
         self.model_return = val_metrics["model_return"]
         self.agent_returns = ag_rets
         self.z_score = val_metrics["z_score"]
@@ -69,9 +70,36 @@ class Model:
             "agent_returns": self.agent_returns
         }
 
-    def report(self) -> dict:
+    def run(self):
+        """Pipeline monolítica original que agrupa as chamadas para conveniência."""
+        X_clean, y_clean = self.build_data()
+        self.fit(X_clean, y_clean)
+        self.validate(X_clean, y_clean)
+        
+    def load(self, filepath: str):
+        """Carrega um modelo pré-treinado do disco."""
+        import joblib
+        self.model_obj = joblib.load(filepath)
+
+    def report(self, target_analysis=None, predictor_analysis=None) -> dict:
         if not self.results:
             raise ValueError("Nenhum resultado disponível. Execute run() primeiro.")
-        return report.generate(self.results)
+        return report.generate(
+            self.results,
+            target_analysis=target_analysis,
+            predictor_analysis=predictor_analysis,
+            target_series=self.target_series,
+            config=self.config,
+            horizon=self.horizon
+        )
+        
+    def save(self, filepath: str):
+        """
+        Salva o modelo treinado (DecisionTreeRegressor) em um arquivo usando joblib.
+        """
+        import joblib
+        if self.model_obj is None:
+            raise ValueError("O modelo ainda não foi treinado. Execute run() primeiro.")
+        joblib.dump(self.model_obj, filepath)
 
 __all__ = ["Model"]

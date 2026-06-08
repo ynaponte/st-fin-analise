@@ -75,7 +75,7 @@ def test_ut_predictor_analysis_full(prices_synthetic):
     for component in ["bruto", "suavizado", "tendencia", "sazonalidade", "residuo"]:
         assert (pred_ticker, component) in pa.results
         res_comp = pa.results[(pred_ticker, component)]
-        assert "mi" in res_comp
+        assert "mi" in res_comp or "granger" in res_comp
         
     # Verify IT-P-06 and IT-P-07: Cointegration uses I(1) raw prices, selection pipeline uses I(0) log-returns
     from statsmodels.tsa.stattools import adfuller

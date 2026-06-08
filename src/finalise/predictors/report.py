@@ -20,7 +20,7 @@ def generate(results: dict, selected: list, cointegration: dict, config, alpha: 
     c_table.add_column("Ticker", style="cyan")
     c_table.add_column("Componente", style="yellow")
     c_table.add_column("MI Max", justify="right")
-    c_table.add_column("Lag Ótimo (τ*)", justify="center")
+    c_table.add_column("Lag Ótimo (tau*)", justify="center")
     c_table.add_column("MI Signif.?", justify="center")
     c_table.add_column("Granger p-val", justify="right")
     c_table.add_column("TE Obs.", justify="right")
@@ -28,15 +28,22 @@ def generate(results: dict, selected: list, cointegration: dict, config, alpha: 
     c_table.add_column("Relação", justify="center", style="bold green")
     
     for (ticker, component), res in results.items():
-        mi_res = res["mi"]
-        mi_max = mi_res["mi_profile"][mi_res["lag_opt"] - 1] if mi_res["mi_profile"] else 0.0
-        lag_opt = mi_res["lag_opt"]
-        mi_sig = "[green]Sim[/green]" if mi_res["is_significant"] else "[red]Não[/red]"
+        if "mi" in res:
+            mi_res = res["mi"]
+            mi_max = f'{mi_res["mi_profile"][mi_res["lag_opt"] - 1]:.4f}' if mi_res["mi_profile"] else "0.0000"
+            lag_opt = str(mi_res["lag_opt"])
+            mi_sig = "[green]Sim[/green]" if mi_res["is_significant"] else "[red]Não[/red]"
+        else:
+            mi_max = "-"
+            lag_opt = "-"
+            mi_sig = "-"
         
         # Granger
         granger_p = "-"
         if "granger" in res:
             granger_p = f"{res['granger']['p_value']:.4f}"
+            if "mi" not in res and res["granger"]["is_causal"]:
+                lag_opt = str(res["granger"]["best_lag"])
             
         # TE
         te_val = "-"
@@ -56,7 +63,7 @@ def generate(results: dict, selected: list, cointegration: dict, config, alpha: 
                 break
                 
         c_table.add_row(
-            ticker, component, f"{mi_max:.4f}", str(lag_opt), mi_sig,
+            ticker, component, mi_max, lag_opt, mi_sig,
             granger_p, te_val, te_thresh, rel
         )
         
@@ -110,6 +117,8 @@ def generate(results: dict, selected: list, cointegration: dict, config, alpha: 
         lags = list(range(1, config.lag_max + 1))
         
         for (ticker, component), res in results.items():
+            if "mi" not in res:
+                continue
             mi_profile = res["mi"]["mi_profile"]
             if len(mi_profile) < config.lag_max:
                 # pad with zeros if shorter
@@ -150,7 +159,7 @@ def generate(results: dict, selected: list, cointegration: dict, config, alpha: 
         ))
         fig_granger.add_hline(y=alpha, line_dash="dash", line_color="red", annotation_text=f"Limiar alpha ({alpha})")
         fig_granger.update_layout(
-            title="p-valores do Teste de Causalidade de Granger no Lag Ótimo τ*",
+            title="p-valores do Teste de Causalidade de Granger no Lag Ótimo tau*",
             xaxis_title="Candidato",
             yaxis_title="p-valor",
             template="plotly_white",

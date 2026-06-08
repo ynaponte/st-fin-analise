@@ -2,6 +2,20 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 from scipy.special import digamma
+from rich.progress import track
+from joblib import Parallel, delayed
+
+
+def _auto_mi_perm_task(seed, series_values, lag_max, k):
+    rng = np.random.default_rng(seed)
+    perm_series = rng.permutation(series_values)
+    perm_profile = []
+    for lag in range(1, lag_max + 1):
+        x = perm_series[lag:]
+        y = perm_series[:-lag]
+        perm_profile.append(ksg_mi(x, y, k=k))
+    return max(perm_profile) if perm_profile else 0.0
+
 
 def fd_bins(series: pd.Series) -> int:
     """
@@ -122,16 +136,15 @@ def auto_mi_significance(
     rng = np.random.default_rng(42)
     series_values = np.asarray(series)
     
+    seeds = np.random.default_rng(42).integers(0, 2**31, size=n_permutations)
     max_null_mis = []
-    for _ in range(n_permutations):
-        perm_series = rng.permutation(series_values)
-        perm_profile = []
-        for lag in range(1, lag_max + 1):
-            x = perm_series[lag:]
-            y = perm_series[:-lag]
-            perm_profile.append(ksg_mi(x, y, k=k))
-        max_null_mis.append(max(perm_profile) if perm_profile else 0.0)
+    
+    tasks = (delayed(_auto_mi_perm_task)(seed, series_values, lag_max, k) for seed in seeds)
+    for result in track(Parallel(n_jobs=-1, return_as="generator")(tasks), total=n_permutations, description="[Target] Permutações Auto-MI"):
+        max_null_mis.append(result)
         
-    p_value = float(np.mean(np.array(max_null_mis) >= max_mi))
+    # Phipson-Smyth correction: avoids p=0 and is consistent with mi.py / transfer_entropy.py
+    count = sum(1 for v in max_null_mis if v >= max_mi)
+    p_value = float((count + 1) / (len(max_null_mis) + 1))
     is_significant = bool(p_value < alpha)
     return p_value, is_significant

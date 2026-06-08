@@ -1,6 +1,16 @@
 import numpy as np
 import pandas as pd
-from typing import Union, List
+from typing import Union
+from rich.progress import track
+from joblib import Parallel, delayed
+
+def _te_perm_task(seed, x_binned, y_t_binned, y_lags_binned, h_y_t_y_past, h_y_past):
+    rng = np.random.default_rng(seed)
+    x_perm = rng.permutation(x_binned)
+    h_joint3 = entropy_joint([y_t_binned] + y_lags_binned + [x_perm])
+    h_joint2 = entropy_joint(y_lags_binned + [x_perm])
+    te_perm = h_y_t_y_past - h_y_past - h_joint3 + h_joint2
+    return max(0.0, te_perm)
 
 def bin_series(series: pd.Series, n_bins: int) -> np.ndarray:
     """
@@ -122,13 +132,11 @@ def compute(
     h_y_past = entropy_joint(y_lags_binned)
     
     null_dist = []
-    rng = np.random.default_rng(42)  # Seed for reproducibility
-    for _ in range(n_permutations):
-        x_perm = rng.permutation(x_binned)
-        h_joint3 = entropy_joint([y_t_binned] + y_lags_binned + [x_perm])
-        h_joint2 = entropy_joint(y_lags_binned + [x_perm])
-        te_perm = h_y_t_y_past - h_y_past - h_joint3 + h_joint2
-        null_dist.append(max(0.0, te_perm))
+    seeds = np.random.default_rng(42).integers(0, 2**31, size=n_permutations)
+    
+    tasks = (delayed(_te_perm_task)(seed, x_binned, y_t_binned, y_lags_binned, h_y_t_y_past, h_y_past) for seed in seeds)
+    for result in track(Parallel(n_jobs=-1, return_as="generator")(tasks), total=n_permutations, description="[Preditor] Permutações Transfer Entropy"):
+        null_dist.append(result)
         
     threshold = float(np.percentile(null_dist, (1.0 - alpha) * 100))
     is_significant = bool(te_obs > threshold)

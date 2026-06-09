@@ -53,7 +53,7 @@ flowchart TD
     end
     
     ACF --> Selector[Seletor de Horizonte]
-    Selector --> |Rank: |H-0.5|, Max Auto-MI, Shannon| Final(Horizonte Ótimo k*)
+    Selector --> |"Rank: |H-0.5|, Max Auto-MI, Shannon"| Final(Horizonte Ótimo k*)
 ```
 
 **Análises Realizadas**:

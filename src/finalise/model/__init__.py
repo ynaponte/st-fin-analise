@@ -19,7 +19,7 @@ import numpy as np
 import joblib
 from typing import Any, Dict, List, Optional, Tuple
 
-from finalise.predictors.selector import SelectedCandidate
+from finalise.workflows.predictors_analysis import SelectedCandidate
 from . import features, labeler, tree, validation, report as _report
 
 

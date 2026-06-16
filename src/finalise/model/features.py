@@ -1,6 +1,6 @@
 import pandas as pd
 from typing import List, Tuple
-from finalise.predictors.selector import SelectedCandidate
+from finalise.workflows.predictors_analysis import SelectedCandidate
 
 def build(selected: List[SelectedCandidate]) -> pd.DataFrame:
     """

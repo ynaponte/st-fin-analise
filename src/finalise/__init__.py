@@ -1,7 +1,5 @@
 from .config import Config
-from .target import TargetAnalysis
-from .predictors import PredictorAnalysis
+from .workflows.predictors_analysis import PredictorsAnalysis
 from .model import Model
-from .analyze import analyze, AnalysisResult
 
-__all__ = ["Config", "TargetAnalysis", "PredictorAnalysis", "Model", "analyze", "AnalysisResult"]
+__all__ = ["Config", "PredictorsAnalysis", "Model"]

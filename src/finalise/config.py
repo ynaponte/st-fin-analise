@@ -6,15 +6,13 @@ import pandas as pd
 class Config:
     target_ticker: str
     predictor_tickers: List[str]
-    horizons: List[int] = field(default_factory=lambda: [1, 5, 21])
     smoothing_window: int = 30
     smoothing_method: str = "DEMA"
     stl_period: int = 21
     alpha: float = 0.05
     n_permutations: int = 500
     knn_k: int = 5
-    lag_max: int = 21
-    force_continue: bool = False
+    lag_max: int = 15
 
     def fetch(self, tickers: Union[List[str], str], start: str, end: str) -> dict[str, pd.Series]:
         import yfinance as yf

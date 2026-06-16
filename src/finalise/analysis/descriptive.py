@@ -6,6 +6,7 @@ Descriptive statistics and scaling exponent analysis (Hurst).
 
 import numpy as np
 import pandas as pd
+import warnings
 from scipy.stats import anderson
 
 
@@ -50,7 +51,9 @@ def stats(series: pd.Series) -> dict:
         }
         
     # Anderson-Darling test for normality
-    ad_result = anderson(series_clean, dist='norm')
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FutureWarning)
+        ad_result = anderson(series_clean, dist='norm')
     
     sig_levels = ad_result.significance_level
     crit_vals = ad_result.critical_values

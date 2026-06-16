@@ -153,7 +153,7 @@ def _build_random_walk_figure(
     # ── 5. Layout ─────────────────────────────────────────────────────────
     title_text = (
         f"Random Walk Backtest — Retorno Acumulado<br>"
-        f"<sup>z-score = {z_score:.2f} σ | "
+        f"<sup>z-score = {z_score:.2f} sigma | "
         f"Retorno do modelo = {model_return:.4f} | "
         f"{'<b>VÁLIDO (outlier)</b>' if is_outlier else 'INVÁLIDO (não supera agentes)'}</sup>"
     )
@@ -258,7 +258,7 @@ def generate(
         p_table = Table(show_header=True, header_style="bold blue", box=box.SIMPLE)
         p_table.add_column("Ticker", style="cyan")
         p_table.add_column("Componente", style="yellow")
-        p_table.add_column("Lag (τ*)", justify="center")
+        p_table.add_column("Lag (tau*)", justify="center")
         p_table.add_column("Tipo", justify="center")
         for sel in selected:
             val_str = (
@@ -306,7 +306,7 @@ def generate(
         f"[bold {status_color}]{status_text}[/bold {status_color}]",
     )
     rw_table.add_row("Retorno Acumulado do Modelo", f"{model_return:.4f}")
-    rw_table.add_row("Z-Score vs Agentes", f"{z_score:.2f} σ")
+    rw_table.add_row("Z-Score vs Agentes", f"{z_score:.2f} sigma")
     rw_table.add_row("Média dos Agentes", f"{agents_mean:.4f}")
     rw_table.add_row("Desvio-Padrão dos Agentes", f"{agents_std:.4f}")
     console.print(Panel(

@@ -1,7 +1,5 @@
 import pandas as pd
-import warnings
 from statsmodels.tsa.stattools import adfuller
-from rich.console import Console
 
 def adf(series: pd.Series, alpha: float = 0.05) -> dict:
     """
@@ -20,14 +18,6 @@ def adf(series: pd.Series, alpha: float = 0.05) -> dict:
         crit_values = {"1%": 0.0, "5%": 0.0, "10%": 0.0}
         
     is_stationary = bool(pvalue < alpha)
-    
-    if not is_stationary:
-        console = Console()
-        console.print(f"[bold yellow]Aviso: A série não é estacionária (ADF p-valor: {pvalue:.6f} >= alpha: {alpha:.2f}). Ela será excluída das análises subsequentes.[/bold yellow]")
-        warnings.warn(
-            f"Série não estacionária (p-valor: {pvalue:.6f} >= alpha: {alpha:.2f})",
-            UserWarning
-        )
         
     return {
         "statistic": adf_stat,

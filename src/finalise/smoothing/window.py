@@ -9,7 +9,7 @@ import pandas as pd
 from scipy.signal import periodogram
 
 
-def find_optimal_window(series: pd.Series, threshold: float = 0.8) -> int:
+def find_optimal_window(series: pd.Series, threshold: float = 0.99) -> int:
     """
     Discovers the optimal (smallest) window size by analyzing the cumulative 
     Power Spectral Density (PSD) of the series.
@@ -23,7 +23,7 @@ def find_optimal_window(series: pd.Series, threshold: float = 0.8) -> int:
     series : pd.Series
         The time series to analyze.
     threshold : float
-        The cumulative power threshold (0.0 to 1.0). Default is 0.8.
+        The cumulative power threshold (0.0 to 1.0). Default is 0.99.
 
     Returns
     -------
@@ -36,8 +36,8 @@ def find_optimal_window(series: pd.Series, threshold: float = 0.8) -> int:
         return 2
         
     # Compute PSD using periodogram. 
-    # Detrend to remove the zero-frequency (DC) component.
-    freqs, psd = periodogram(clean_series, detrend='constant')
+    # Detrend 'linear' removes the drift (trend) typical in random walks
+    freqs, psd = periodogram(clean_series, detrend='linear')
     
     # Ignore DC component
     freqs = freqs[1:]
@@ -61,9 +61,10 @@ def find_optimal_window(series: pd.Series, threshold: float = 0.8) -> int:
     
     # Avoid division by zero if freq is somehow 0
     if target_freq <= 0:
-        return len(clean_series)
+        return 60
         
     # The optimal window is the period corresponding to the target frequency
     optimal_window = int(round(1.0 / target_freq))
     
-    return max(2, optimal_window)
+    # Cap between 2 and 60 days for daily financial time series
+    return max(2, min(optimal_window, 60))

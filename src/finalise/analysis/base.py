@@ -176,6 +176,7 @@ def johansen_cointegration(
         "eigenvectors":    [],
         "loadings":        [],
         "spreads":         {},
+        "coint_series":    None,
         "alpha_used":      alpha,
     }
 
@@ -219,6 +220,15 @@ def johansen_cointegration(
         )
         spreads[f"cv_{r}"] = spread
 
+    # Calculate raw cointegrated series
+    coint_series = None
+    if rank > 0:
+        coint_series = pd.DataFrame(
+            df.values @ result.evec[:, :rank],
+            index=df.index,
+            columns=[f"coint_{i}" for i in range(rank)]
+        )
+
     return {
         "rank":            rank,
         "is_cointegrated": bool(rank >= 1),
@@ -228,6 +238,7 @@ def johansen_cointegration(
         "eigenvectors":    result.evec.T.tolist(),   # rows = eigenvectors
         "loadings":        result.evec.tolist(),     # alpha matrix (k × k)
         "spreads":         spreads,
+        "coint_series":    coint_series,
         "alpha_used":      alpha,
     }
 

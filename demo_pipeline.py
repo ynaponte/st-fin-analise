@@ -44,9 +44,9 @@ for ticker, series in prices_dict.items():
 
 # %% [markdown]
 # ## Fase 1: Análise Causal Multicritério e Seleção de Preditores
-# A nova pipeline v4 unifica smoothing, log-retornos, hard gates, métricas lineares (Granger) e não-lineares (MI, TE), otimização do Lag Consensual e extração STL.
+# A nova pipeline foca na Transferência de Informação (TE) testada contra Surrogates por deslocamento circular.
 
-print("\n--- Iniciando Pipeline de Análise de Preditores ---")
+print("\n--- Iniciando Pipeline de Seleção (Focado em TE) ---")
 pa = PredictorsAnalysis(prices_dict, config)
 pa_result = pa.run()
 

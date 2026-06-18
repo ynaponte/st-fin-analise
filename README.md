@@ -64,43 +64,51 @@ flowchart TD
 - **Entropia e Auto-MI**: A regra de Freedman-Diaconis estima os bins. O estimador KSG k-NN calcula a Auto-Informação Mútua. Um teste de permutação avalia a significância estatística.
 - **Seleção**: Classifica horizontes por distância do Hurst em relação a 0.5, valor de Auto-MI máximo e entropia de Shannon.
 
-## Submódulo: Predictors (`src/finalise/predictors`)
+## Submódulo: Predictors (`src/finalise/workflows`)
 
-O submódulo `predictors` realiza a extração de características (features) causais de cada ativo preditor candidato e emprega uma árvore de decisão para aceitá-los baseando-se em previsibilidade linear ou não-linear.
+O submódulo orquestra a pipeline v4 de avaliação multicritério de causalidade, selecionando candidatos baseando-se em um score composto de métricas lineares e não lineares, além de aplicar *Hard Gates* para descartar ruído precocemente.
 
 ```mermaid
 flowchart TD
-    Prices[(Preços Brutos)] --> Coint[Teste Engle-Granger Cointegração]
-    Prices --> CandGen(Geração de Candidatos)
+    A["Entrada: preços brutos<br>(alvo + N candidatos)"] --> B["Etapa 0: Smoothing<br>(preços brutos)"]
+    B --> C["Etapa 1: Log-retornos (k=1)<br>dos preços suavizados"]
     
-    subgraph Geração de Candidatos
-        CandGen --> Raw[Retorno Diário k=1]
-        CandGen --> Smooth[Suavização Causal SMA/EMA/DEMA/Gauss]
-        CandGen --> STL[Decomposição STL Causal Trend/Seas/Resid]
-    end
+    C --> D["Etapa 2: Hard Gates<br>ADF (log-retornos)<br>Hurst (preços suavizados, ref=0.5 fixo)"]
+    D --> E{"Passa?"}
+    E -- Não --> DROP["❌ Descartar"]
+    E -- Sim --> F
+
+    F["Etapa 3: JSD<br>log-retornos candidato vs alvo<br>→ peso global (1 - JSD)"] --> G
+
+    G["Etapa 4: Auto-MI do alvo<br>→ y_lags para TE<br>+ ACF/PACF do alvo"] --> H
+
+    H["Etapa 5: Score Matrix (candidato × lag)"] --> H1
+    H1["5a: Granger F-stat por lag<br>(zerado se p ≥ α)"] --> NORM
+    H --> H2["5b: MI (KSG) por lag"] --> NORM
+    H --> H3["5c: TE em bits<br>(só lags com MI > média)"] --> NORM
+
+    NORM["Etapa 6: Normalizar (min-max)"] --> SCORE
+
+    SCORE["Etapa 7: Score composto<br>S(c,l) = JSD_w(c) × [0.50·G + 0.25·MI + 0.25·TE]"]
+
+    SCORE --> LAG["Etapa 8: Lag Consensual<br>ℓ* = argmax_l Σ_c S(c,l)"]
+
+    LAG --> SEL["Etapa 9: Top-K no lag ℓ*"]
+
+    SEL --> ENRICH["Etapa 10: Enriquecimento pós-seleção"]
+    ENRICH --> STL["10a: STL nos preços suavizados<br>dos selecionados<br>→ features adicionais"]
+    ENRICH --> JOH["10b: Johansen<br>(preços suavizados, informativo)"]
     
-    Raw --> Granger{Teste de Granger\nc/ correção FDR}
-    Smooth --> Granger
-    
-    Granger -- Significativo --> SelLin[Selecionado como Linear]
-    Granger -- Falha --> CMI{Cross-MI k-NN}
-    STL --> CMI
-    
-    CMI -- Significativo --> TE{Transfer Entropy\nPermutação}
-    CMI -- Falha --> Desc[Descartado]
-    
-    TE -- Significativo --> SelNL[Selecionado como Não-Linear]
-    TE -- Falha --> Desc
-    
-    SelLin --> Dedup[Remoção de Duplicatas intra-ticker]
-    SelNL --> Dedup
-    Dedup --> Final(Candidatos Selecionados com lag_tau)
+    STL --> DESC["Etapa 11: Descritivas<br>(relatório)"]
+    JOH --> DESC
+    DESC --> OUT["Saída: PipelineResult"]
 ```
 
-**Análises Realizadas**:
-- **Geração Causal**: Retornos brutos (k=1), filtragem passa-baixa sem viés de antecipação e decomposição `STL` reajustada iterativamente (*step-by-step*) com *forward-fill*.
-- **Causalidade Linear (Granger)**: Aplicado em dados diários estacionários. Corrige os p-valores ao longo de múltiplos lags via FDR de Benjamini-Hochberg.
-- **Informação Mútua Cruzada (MI) e Transfer Entropy (TE)**: Representa o fluxo não-linear. Utiliza teste de permutação estatística máxima no Cross-MI. A Transfer Entropy é avaliada condicionando o ativo ao histórico ótimo do alvo (lag de auto-MI da Fase 1). O preditor é eleito não-linear em caso de significância estatística robusta na TE.
+**Análises Realizadas (Pipeline v4)**:
+- **Smoothing e Log-retornos**: Aplica filtros passa-baixa antes do cálculo de log-retornos.
+- **Hard Gates**: Rejeita ativamente séries não-estacionárias (via ADF) e *random walks* genuínos (onde o expoente de Hurst se concentra rigidamente em $0.5 \pm tolerância$).
+- **Score Matrix e Lag Consensual**: Extrai estatísticas Granger (linear), Mutual Information e Transfer Entropy (não-linear). Multiplica pela Similaridade de Distribuição Global (1 - Divergência de Jensen-Shannon) e pontua simultaneamente múltiplos lags para descobrir o lag ótimo (Top-K) que unifica as decisões do mercado.
+- **Enriquecimento Pós-Seleção**: Realiza a decomposição causal STL e verifica Spreads cointegrados via Johansen apenas para o Top-K que sobreviveu à filtragem pesada.
 
 ## Submódulo: Model (`src/finalise/model`)
 

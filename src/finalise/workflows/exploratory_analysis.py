@@ -121,22 +121,29 @@ class ExploratoryAnalysis:
         for ticker in candidate_tickers:
             if ticker not in returns:
                 continue
-            c_ret = returns[ticker]
+            c_ret_raw = returns[ticker]
+
+            # Alinhar as séries
+            aligned = pd.concat([c_ret_raw, target_ret], axis=1, join='inner').dropna()
+            if aligned.empty or len(aligned) < 2:
+                continue
+            c_ret = aligned.iloc[:, 0]
+            target_aligned = aligned.iloc[:, 1]
 
             # Correlações Simples
-            pearson_val, _ = scipy_stats.pearsonr(c_ret, target_ret)
-            spearman_val, _ = scipy_stats.spearmanr(c_ret, target_ret)
+            pearson_val, _ = scipy_stats.pearsonr(c_ret, target_aligned)
+            spearman_val, _ = scipy_stats.spearmanr(c_ret, target_aligned)
 
             # JSD
-            jsd_df = jensen_shannon_divergence([c_ret, target_ret])
+            jsd_df = jensen_shannon_divergence([c_ret, target_aligned])
             jsd_val = float(jsd_df.iloc[0, 1])
 
             # MI
-            mi_result = mutual_information_lags(target_ret, c_ret, max_lag=self.config.lag_max, k=self.config.knn_k)
+            mi_result = mutual_information_lags(target_aligned, c_ret, max_lag=self.config.lag_max, k=self.config.knn_k)
             max_mi = max([mi for _, mi in mi_result]) if mi_result else 0.0
 
             # Granger
-            g_result = granger_causality(target_ret, [c_ret], lag_max=self.config.lag_max, alpha=self.config.alpha)
+            g_result = granger_causality(target_aligned, [c_ret], lag_max=self.config.lag_max, alpha=self.config.alpha)
             if not g_result:
                 granger_str = "[red]Erro[/red]"
             else:
@@ -155,3 +162,83 @@ class ExploratoryAnalysis:
             )
         self.console.print(t2)
         self.console.print("\n")
+
+        self.plot_visualizations(returns)
+
+    def plot_visualizations(self, returns: dict[str, pd.Series]):
+        self.console.print("[bold cyan]Gerando visualizações...[/bold cyan]")
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        from scipy.stats import norm
+        from finalise.analysis.entropy import _ksg_mi
+        import numpy as np
+
+        tickers = list(self.prices_dict.keys())
+        n_tickers = len(tickers)
+        
+        # 1. Séries com e sem suavização
+        fig1 = make_subplots(rows=n_tickers, cols=1, shared_xaxes=True, subplot_titles=[f'Original vs Suavizada: {t}' for t in tickers])
+        for i, ticker in enumerate(tickers, start=1):
+            series = self.prices_dict[ticker]
+            smoothed = series.rolling(window=21, min_periods=1).mean()
+            fig1.add_trace(go.Scatter(x=series.index, y=series, name=f'Original {ticker}', opacity=0.6, line=dict(color='blue')), row=i, col=1)
+            fig1.add_trace(go.Scatter(x=smoothed.index, y=smoothed, name=f'MM21 {ticker}', line=dict(color='red', width=2)), row=i, col=1)
+        fig1.update_layout(height=300 * n_tickers, title_text="Séries com e sem suavização", showlegend=False)
+        fig1.show()
+
+        # 2. Log-retornos sobrepostos pela normal
+        ret_tickers = [t for t in tickers if t in returns]
+        n_ret_tickers = len(ret_tickers)
+        if n_ret_tickers > 0:
+            fig2 = make_subplots(rows=n_ret_tickers, cols=1, subplot_titles=[f'Log-Retornos: {t}' for t in ret_tickers])
+            for i, ticker in enumerate(ret_tickers, start=1):
+                ret = returns[ticker]
+                fig2.add_trace(go.Histogram(x=ret, histnorm='probability density', name=f'Retornos {ticker}', opacity=0.5, marker_color='blue'), row=i, col=1)
+                
+                mu, std = norm.fit(ret)
+                xmin, xmax = ret.min(), ret.max()
+                x_vals = np.linspace(xmin, xmax, 100)
+                p = norm.pdf(x_vals, mu, std)
+                fig2.add_trace(go.Scatter(x=x_vals, y=p, mode='lines', name=f'Normal μ={mu:.4f}, σ={std:.4f}', line=dict(color='black', width=2)), row=i, col=1)
+            fig2.update_layout(height=300 * n_ret_tickers, title_text="Distribuição dos Log-Retornos", showlegend=False)
+            fig2.show()
+
+        # Alinhar todos os retornos para as matrizes
+        ret_df = pd.DataFrame(returns).dropna()
+        if ret_df.empty:
+            self.console.print("[red]Erro: Sem dados alinhados para as matrizes de calor.[/red]")
+            return
+            
+        ret_cols = ret_df.columns.tolist()
+        
+        # 3. Matriz de calor da JSD
+        jsd_df = jensen_shannon_divergence([ret_df[c] for c in ret_cols])
+        fig3 = go.Figure(data=go.Heatmap(z=jsd_df.values, x=ret_cols, y=ret_cols, colorscale='YlOrRd', text=np.round(jsd_df.values, 4), texttemplate="%{text}"))
+        fig3.update_layout(title="Heatmap da Jensen-Shannon Divergence (JSD)", width=600, height=600)
+        fig3.show()
+        
+        # 4. Matriz de calor para cada correlação (Pearson, Spearman)
+        pearson_corr = ret_df.corr(method='pearson')
+        spearman_corr = ret_df.corr(method='spearman')
+        
+        fig4 = make_subplots(rows=1, cols=2, subplot_titles=["Correlação de Pearson", "Correlação de Spearman"])
+        fig4.add_trace(go.Heatmap(z=pearson_corr.values, x=ret_cols, y=ret_cols, colorscale='RdBu', zmin=-1, zmax=1, text=np.round(pearson_corr.values, 4), texttemplate="%{text}", coloraxis="coloraxis"), row=1, col=1)
+        fig4.add_trace(go.Heatmap(z=spearman_corr.values, x=ret_cols, y=ret_cols, colorscale='RdBu', zmin=-1, zmax=1, text=np.round(spearman_corr.values, 4), texttemplate="%{text}", coloraxis="coloraxis"), row=1, col=2)
+        fig4.update_layout(title_text="Heatmaps de Correlações", coloraxis=dict(colorscale='RdBu', cmin=-1, cmax=1), width=1000, height=500)
+        fig4.show()
+        
+        # 5. Matriz de calor para Informação Mútua
+        mi_matrix = pd.DataFrame(0.0, index=ret_cols, columns=ret_cols)
+        for c1 in ret_cols:
+            for c2 in ret_cols:
+                if c1 == c2:
+                    mi_matrix.loc[c1, c2] = np.nan # Evita calcular auto-informação mutua (entropia)
+                else:
+                    # Instante MI usando KSG em nats, converter para bits
+                    val = _ksg_mi(ret_df[c1].values, ret_df[c2].values, k=self.config.knn_k) / np.log(2)
+                    mi_matrix.loc[c1, c2] = val
+                    
+        fig5 = go.Figure(data=go.Heatmap(z=mi_matrix.values, x=ret_cols, y=ret_cols, colorscale='Viridis', text=np.round(mi_matrix.values, 4), texttemplate="%{text}"))
+        fig5.update_layout(title="Heatmap da Informação Mútua (bits)", width=600, height=600)
+        fig5.show()
+

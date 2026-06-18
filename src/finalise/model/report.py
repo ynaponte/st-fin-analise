@@ -256,20 +256,21 @@ def generate(
     if predictor_analysis is not None:
         selected = predictor_analysis.selected
         p_table = Table(show_header=True, header_style="bold blue", box=box.SIMPLE)
-        p_table.add_column("Ticker", style="cyan")
+        p_table.add_column("Ticker / Feature", style="cyan")
         p_table.add_column("Componente", style="yellow")
         p_table.add_column("Lag (tau*)", justify="center")
         p_table.add_column("Tipo", justify="center")
         for sel in selected:
-            val_str = (
-                f"MI: {sel.mi_value:.4f}"
-                if sel.relation_type == "non-linear"
-                else f"Granger p={sel.granger_pvalue:.4f}"
-            )
-            p_table.add_row(sel.ticker, sel.component, str(sel.lag_tau), sel.relation_type.capitalize())
+            p_table.add_row(f"{sel.ticker} (Base)", sel.component, str(sel.lag_tau), sel.relation_type.capitalize())
+            
+        generated = getattr(predictor_analysis, "generated_features", None)
+        if generated is not None and not generated.empty:
+            for col in generated.columns:
+                p_table.add_row(col, "Derivada / Estatística", str(predictor_analysis.lag_consensus), "Engenharia de Features")
+                
         console.print(Panel(
             p_table,
-            title="[bold blue]Fase 2 — Preditores Selecionados[/bold blue]",
+            title="[bold blue]Fase 2 — Preditores & Features Selecionadas[/bold blue]",
             border_style="blue",
         ))
 
@@ -306,6 +307,11 @@ def generate(
         f"[bold {status_color}]{status_text}[/bold {status_color}]",
     )
     rw_table.add_row("Retorno Acumulado do Modelo", f"{model_return:.4f}")
+    
+    capital_inicial = 1000.0
+    capital_final = capital_inicial * np.exp(model_return)
+    rw_table.add_row("Capital Final (Inicial: R$ 1.000)", f"R$ {capital_final:.2f}")
+    
     rw_table.add_row("Z-Score vs Agentes", f"{z_score:.2f} sigma")
     rw_table.add_row("Média dos Agentes", f"{agents_mean:.4f}")
     rw_table.add_row("Desvio-Padrão dos Agentes", f"{agents_std:.4f}")

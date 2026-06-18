@@ -20,12 +20,11 @@ completas (para o gráfico de série temporal com curvas de nível).
 
 import numpy as np
 import pandas as pd
-from sklearn.tree import DecisionTreeClassifier
 from typing import Tuple, Dict, Any
 
 
 def random_walk_backtest(
-    model: DecisionTreeClassifier,
+    model: Any,
     X: pd.DataFrame,
     y_returns: pd.Series,
     n_agents: int = 1000,

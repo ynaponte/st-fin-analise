@@ -66,7 +66,14 @@ else:
     target_series = log_returns(prices_dict[config.target_ticker], k=1)
     
     # Inicializa o classificador com os preditores que sobreviveram aos gates
-    m = Model(pa_result.selected, target_series, config, horizon=1)
+    m = Model(
+        pa_result.selected, 
+        target_series, 
+        config, 
+        horizon=1,
+        generated_features=pa_result.generated_features,
+        lag_consensus=pa_result.lag_consensus
+    )
     
     print(" - Preparando matriz de features (X, y)...")
     X_clean, y_clean, y_returns = m.build_data()

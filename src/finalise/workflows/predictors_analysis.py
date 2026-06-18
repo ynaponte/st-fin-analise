@@ -110,6 +110,7 @@ class PipelineResult:
     dropped: Dict[str, str]
     trend_transfer_entropy: Dict[str, float]
     residual_transfer_entropy: Dict[str, float]
+    generated_features: pd.DataFrame
 
 
 # ---------------------------------------------------------------------------
@@ -221,13 +222,25 @@ class PredictorsAnalysis:
             te_matrix_data[ticker] = {}
             p_value_data[ticker] = {}
             
+            # Avalia Granger causality para reter TE mesmo se surrogates falharem
+            g_res = granger_causality(target_ret, [c_ret], lag_max=lag_max, alpha=alpha)
+            g_pvals = {}
+            if g_res:
+                dk = next(iter(g_res))
+                g_pvals = g_res[dk].get("all_p_values", {})
+            
             for lag in range(1, lag_max + 1):
                 te_obs, p_val = test_te_significance(
                     c_ret, target_ret, c_surrs, lag, y_lags=auto_mi_lag, n_jobs=-1
                 )
                 p_value_data[ticker][f"lag_{lag}"] = p_val
-                # Se não for significativo, vira zero
-                if p_val >= alpha:
+                
+                # Verifica se há causalidade de Granger neste lag
+                g_pval_lag = g_pvals.get(lag, 1.0)
+                is_granger_causal = g_pval_lag <= alpha
+                
+                # Se não for significativo por TE (surrogates) E não tiver causalidade de Granger, vira zero
+                if p_val >= alpha and not is_granger_causal:
                     te_matrix_data[ticker][f"lag_{lag}"] = 0.0
                 else:
                     te_matrix_data[ticker][f"lag_{lag}"] = te_obs
@@ -394,16 +407,67 @@ class PredictorsAnalysis:
                 except Exception:
                     residual_te[ticker] = 0.0
 
-        if coint_trend:
-            rank = coint_trend.get("rank", 0)
-            is_coint = coint_trend.get("is_cointegrated", False)
-            table_coint = Table(show_header=True, header_style="bold blue", title="Cointegração de Johansen (Tendências)")
+        if coint_trend or coint_resid:
+            table_coint = Table(show_header=True, header_style="bold blue", title="Cointegração de Johansen")
+            table_coint.add_column("Componente", justify="left")
             table_coint.add_column("Rank (r)", justify="left")
             table_coint.add_column("Co-integrado?", justify="left")
-            table_coint.add_row(str(rank), "[bold green]Sim[/bold green]" if is_coint else "[red]Não[/red]")
+            if coint_trend:
+                rank_t = coint_trend.get("rank", 0)
+                is_coint_t = coint_trend.get("is_cointegrated", False)
+                table_coint.add_row("Tendências", str(rank_t), "[bold green]Sim[/bold green]" if is_coint_t else "[red]Não[/red]")
+            if coint_resid:
+                rank_r = coint_resid.get("rank", 0)
+                is_coint_r = coint_resid.get("is_cointegrated", False)
+                table_coint.add_row("Resíduos", str(rank_r), "[bold green]Sim[/bold green]" if is_coint_r else "[red]Não[/red]")
             self.console.print(table_coint)
 
         descriptives = self._compute_descriptives(selected_tickers, returns, target_ret, lag_max, alpha)
+
+        generated_features = self._compute_features(coint_trend, coint_resid, scores, returns, window)
+
+        # ── Etapa 9: Teste de Surrogates para Novas Features e Resumo Final ──────────
+        self.console.print("\n[bold yellow]Etapa 9: Teste de Surrogates e Resumo Final das Features[/bold yellow]")
+        
+        table_feat = Table(show_header=True, header_style="bold magenta", title=f"Resumo Final das Features para a Árvore (Lag {lag_consensus})")
+        table_feat.add_column("Feature / Preditor", style="cyan")
+        table_feat.add_column("Causalidade (Granger)", justify="center")
+        table_feat.add_column("TE Observada", justify="right")
+        table_feat.add_column("P-Valor (TE)", justify="right")
+        table_feat.add_column("Status Final", justify="left")
+        
+        for sel in selected:
+            is_g_causal = sel.granger_pvalue <= alpha
+            g_status = "[green]Sim[/green]" if is_g_causal else "[red]Não[/red]"
+            surr_pval = p_value_data[sel.ticker][f"lag_{lag_consensus}"]
+            p_val_str = "-" if is_g_causal else f"{surr_pval:.4f}"
+            table_feat.add_row(f"{sel.ticker} (Base)", g_status, f"{sel.te_value:.4f}", p_val_str, "[green]Escolhida[/green]")
+
+        if not generated_features.empty:
+            valid_features = []
+            for col in generated_features.columns:
+                f_series = generated_features[col].dropna()
+                if len(f_series) < 10:
+                    table_feat.add_row(col, "-", "-", "-", "[red]Dropada (Dados insuficientes)[/red]")
+                    continue
+                    
+                # Gerar surrogates para a feature
+                f_surrs = generate_circular_surrogates(f_series, n_surrogates=self.n_surrogates, seed=42)
+                
+                # Teste TE no lag_consensus
+                te_obs, p_val = test_te_significance(
+                    f_series, target_ret, f_surrs, lag_consensus, y_lags=auto_mi_lag, n_jobs=-1
+                )
+                
+                if p_val < alpha:
+                    table_feat.add_row(col, "-", f"{te_obs:.4f}", f"{p_val:.4f}", "[green]Escolhida[/green]")
+                    valid_features.append(col)
+                else:
+                    table_feat.add_row(col, "-", f"{te_obs:.4f}", f"{p_val:.4f}", "[red]Dropada[/red]")
+                    
+            generated_features = generated_features[valid_features]
+
+        self.console.print(table_feat)
 
         self.result = PipelineResult(
             selected=selected,
@@ -418,18 +482,64 @@ class PredictorsAnalysis:
             dropped=dropped,
             trend_transfer_entropy=trend_te,
             residual_transfer_entropy=residual_te,
+            generated_features=generated_features,
         )
         return self.result
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+    def _compute_features(self, coint_trend: dict, coint_resid: dict, scores: pd.Series, returns: dict, window: int) -> pd.DataFrame:
+        features_list = []
+        
+        # 1. Cointegration series
+        if coint_trend and coint_trend.get("coint_series") is not None:
+            coint_df = coint_trend["coint_series"]
+            for col in coint_df.columns:
+                features_list.append(coint_df[col].rename(f"coint_trend_{col}"))
+                
+        if coint_resid and coint_resid.get("coint_series") is not None:
+            coint_df_resid = coint_resid["coint_series"]
+            for col in coint_df_resid.columns:
+                features_list.append(coint_df_resid[col].rename(f"coint_resid_{col}"))
+                
+        # 2. Relevants (TE > 0)
+        relevant_tickers = [str(t) for t, score in scores.items() if score > 0.0]
+        
+        def safe_entropy(x):
+            if np.max(x) == np.min(x): return 0.0
+            counts, _ = np.histogram(x, bins='fd')
+            probs = counts / counts.sum()
+            probs = probs[probs > 0]
+            return -np.sum(probs * np.log2(probs))
+            
+        def dist_argmax_argmin(x):
+            return abs(np.argmax(x) - np.argmin(x))
+            
+        for ticker in relevant_tickers:
+            s = returns[ticker]
+            features_list.append(s.rename(f"{ticker}_valor"))
+            
+            r_max = s.rolling(window=window).max().rename(f"{ticker}_max")
+            r_min = s.rolling(window=window).min().rename(f"{ticker}_min")
+            r_dist = s.rolling(window=window).apply(dist_argmax_argmin, raw=True).rename(f"{ticker}_dist_max_min")
+            r_ent = s.rolling(window=window).apply(safe_entropy, raw=True).rename(f"{ticker}_entropia")
+            
+            features_list.append(r_max)
+            features_list.append(r_min)
+            features_list.append(r_dist)
+            features_list.append(r_ent)
+            
+        if features_list:
+            return pd.concat(features_list, axis=1)
+        return pd.DataFrame()
+
     def _empty_result(self, *, window: int, dropped: dict[str, str]) -> PipelineResult:
         return PipelineResult(
             selected=[], lag_consensus=0, score_matrix=pd.DataFrame(),
             auto_mi_lag=1, smoothing_window=window, smoothing_method=self.config.smoothing_method,
             stl_components={}, cointegration={}, descriptives={}, dropped=dropped,
-            trend_transfer_entropy={}, residual_transfer_entropy={}
+            trend_transfer_entropy={}, residual_transfer_entropy={}, generated_features=pd.DataFrame()
         )
 
     @staticmethod

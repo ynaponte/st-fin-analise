@@ -53,11 +53,15 @@ class Model:
         target_series: pd.Series,
         config: Any,
         horizon: Optional[int] = None,
+        generated_features: Optional[pd.DataFrame] = None,
+        lag_consensus: int = 1,
     ):
         self.selected = selected
         self.target_series = target_series
         self.config = config
         self.horizon = horizon
+        self.generated_features = generated_features
+        self.lag_consensus = lag_consensus
 
         # Armazenados após fit()
         self.model_obj = None
@@ -101,6 +105,11 @@ class Model:
         """
         # Constrói a matriz de features com shifts de lag
         X = features.build(self.selected)
+        
+        if self.generated_features is not None and not self.generated_features.empty:
+            shifted_features = self.generated_features.shift(self.lag_consensus)
+            X = pd.concat([X, shifted_features], axis=1)
+            
         if X.empty:
             raise ValueError("Matriz de features vazia. Verifique os preditores selecionados.")
 

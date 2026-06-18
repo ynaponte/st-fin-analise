@@ -17,6 +17,8 @@ Fluxo:
 import pandas as pd
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.utils import shuffle as sk_shuffle
 from typing import Dict, Tuple, Any
@@ -24,11 +26,11 @@ from typing import Dict, Tuple, Any
 
 # Grade de hiperparâmetros para o GridSearchCV
 PARAM_GRID: Dict[str, Any] = {
-    "max_depth": [3, 5, 7, 10, None],
-    "min_samples_split": [2, 5, 10],
-    "min_samples_leaf": [1, 2, 4],
-    "criterion": ["gini", "entropy"],
-    "class_weight": [None, "balanced"],
+    "classifier__max_depth": [3, 5, 7, 10, None],
+    "classifier__min_samples_split": [2, 5, 10],
+    "classifier__min_samples_leaf": [1, 2, 4],
+    "classifier__criterion": ["gini", "entropy"],
+    "classifier__class_weight": [None, "balanced"],
 }
 
 
@@ -39,7 +41,7 @@ def fit(
     random_state: int = 42,
     test_size: float = 0.20,
     cv_folds: int = 5,
-) -> Tuple[DecisionTreeClassifier, Dict[str, Any], float, float, Dict[str, float]]:
+) -> Tuple[Pipeline, Dict[str, Any], float, float, Dict[str, float]]:
     """
     Treina um DecisionTreeClassifier com busca de hiperparâmetros via GridSearchCV.
 
@@ -113,13 +115,16 @@ def fit(
     )
 
     # ── 4. GridSearchCV ───────────────────────────────────────────────────
-    base_clf = DecisionTreeClassifier(random_state=random_state)
+    base_pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('classifier', DecisionTreeClassifier(random_state=random_state))
+    ])
     cv_strategy = StratifiedKFold(
         n_splits=cv_folds, shuffle=True, random_state=random_state
     )
 
     grid_search = GridSearchCV(
-        estimator=base_clf,
+        estimator=base_pipeline,
         param_grid=PARAM_GRID,
         scoring="accuracy",
         cv=cv_strategy,
@@ -129,7 +134,7 @@ def fit(
     )
     grid_search.fit(X_train, y_train)
 
-    best_model: DecisionTreeClassifier = grid_search.best_estimator_
+    best_model: Pipeline = grid_search.best_estimator_
     best_params: Dict[str, Any] = grid_search.best_params_
 
     # ── 5. Métricas de acurácia ───────────────────────────────────────────
@@ -137,8 +142,9 @@ def fit(
     test_accuracy = float(best_model.score(X_test, y_test))
 
     # ── 6. Importância de features ────────────────────────────────────────
+    dt_model = best_model.named_steps["classifier"]
     feature_importances: Dict[str, float] = dict(
-        zip(feature_names, best_model.feature_importances_)
+        zip(feature_names, dt_model.feature_importances_)
     )
 
     return best_model, best_params, train_accuracy, test_accuracy, feature_importances

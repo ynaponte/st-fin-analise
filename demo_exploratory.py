@@ -4,8 +4,17 @@
 # Ativos preditores candidatos: Ouro, Petróleo, Exxon Mobil e Dólar (Dxy)
 #
 # Este script roda apenas a Análise Exploratória, que serve para identificar
-# de forma factual propriedades estatísticas e correlações lineares/não-lineares
-# iniciais, sem exercer nenhum papel de filtro no pipeline preditivo.
+# de forma factual propriedades estatísticas e correlações (lineares e não-lineares)
+# iniciais das séries financeiras, servindo como uma base fundamental para análise empírica,
+# sem exercer papel de filtro no pipeline preditivo.
+# 
+# A análise avalia as seguintes métricas fundamentais:
+# - Normalidade: Estatística de Anderson-Darling, avaliando a aderência à distribuição $N(\mu, \sigma^2)$.
+# - Estacionariedade: Teste de Dickey-Fuller Aumentado (ADF).
+# - Persistência/Memória de Longo Prazo: Expoente de Hurst ($H$), onde $H \approx 0.5$ denota passeio aleatório (Random Walk).
+# - Divergência da Distribuição de Informação: Jensen-Shannon Divergence ($JSD(P \parallel Q) = \frac{1}{2} D_{KL}(P \parallel M) + \frac{1}{2} D_{KL}(Q \parallel M)$).
+# - Informação Mútua (MI): $MI(X;Y) = \sum_{y \in Y} \sum_{x \in X} p(x,y) \log \left( \frac{p(x,y)}{p(x)p(y)} \right)$, estimada via o estimador Kraskov-Stögbauer-Grassberger (KSG).
+# - Causalidade Linear de Granger: Teste de hipótese para a predição VAR(p), quantificando precedência temporal linear.
 
 # %%
 import pandas as pd

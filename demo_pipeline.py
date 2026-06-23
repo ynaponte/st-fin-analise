@@ -44,8 +44,13 @@ for ticker, series in prices_dict.items():
 
 # %% [markdown]
 # ## Fase 1: Análise Causal e Seleção de Preditores (TE + Surrogates)
-# A pipeline seleciona preditores por Transfer Entropy testada contra Surrogates circulares.
-# O lag_consensus identifica o horizonte temporal de máxima transferência de informação.
+# A pipeline metodológica implementa um arcabouço rigoroso para detecção de direcionalidade da informação:
+# 1. **Transformação e Smoothing**: Aplicação de Filtros Passa-Baixa otimizados para atenuação do ruído estocástico e obtenção de log-retornos ($R_t = \ln(P_t/P_{t-1})$).
+# 2. **Auto-MI**: Estimação da Informação Mútua Autoregressiva para determinação empírica da dimensão de embutimento (embedding dimension, $y_{lags}$) da série alvo.
+# 3. **Surrogates Circulares**: Geração de permutações circulares (Surrogates) mantendo a Função Densidade de Probabilidade (PDF) univariada, para teste de robustez da hipótese nula $H_0$ (ausência de causalidade direcional).
+# 4. **Transfer Entropy (TE)**: Medição assimétrica de causalidade de Shannon ($T_{X \to Y}(\tau) = H(Y_t \mid Y_{t-1:t-y_{lags}}) - H(Y_t \mid Y_{t-1:t-y_{lags}}, X_{t-\tau})$). A Transfer Entropy observada é testada contra a distribuição dos Surrogates e filtrada estatisticamente ($p$-valor < $\alpha$), paralelamente com Causalidade Linear de Granger.
+# 5. **Lag Endógeno e Seleção**: Maximização transversal da soma de TE informacional para determinar o $\tau$ endógeno (horizonte reativo do sistema como um todo), resultando no subconjunto de top-K preditores ótimo no sistema complexo.
+# 6. **Enriquecimento Estrutural**: Decomposição em Seasonal and Trend decomposition using Loess (STL) avaliando cointegração de Johansen e causalidade inter-séries em componentes lentas (tendência) e rápidas (ruído). Geração das derivadas para retroalimentação na modelagem.
 
 print("\n--- Iniciando Pipeline de Seleção (TE Surrogates v5) ---")
 pa = PredictorsAnalysis(prices_dict, config)
@@ -53,8 +58,12 @@ pa_result = pa.run()
 
 # %% [markdown]
 # ## Fase 2: Modelagem Preditiva e Backtest (Model)
-# O modelo é um bot de trading: prevê a direção dos próximos `lag_consensus` dias.
-# A validação usa dados out-of-sample com posições não-sobrepostas.
+# O paradigma preditivo assenta-se na previsão do direcionamento estocástico (sinal) dos ativos.
+# Para manter rigor sobre data snooping e look-ahead bias:
+# - Avaliação "Walk-Forward" adotando backtest *out-of-sample* com partições temporais estritas.
+# - Operações não-sobrepostas: A predição atua no horizonte temporal ótimo de $t \to t+\tau$, onde $\tau$ é o `lag_consensus` global.
+# - Target binário ($y_t \in \{-1, 1\}$) sobre a expectativa direcional do log-retorno do ativo alvo no horizonte avaliado.
+# - Aplica-se otimização do classificador (via `GridSearchCV` sobre Decision Tree) parametrizado pelas métricas dinâmicas oriundas do TE-pipeline.
 
 if len(pa_result.selected) == 0:
     print("\n[Aviso] Nenhum preditor foi selecionado na análise causal. O modelo não pode ser executado.")

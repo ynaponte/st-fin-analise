@@ -21,10 +21,10 @@ from typing import Dict, Tuple, Any
 
 # Grade de hiperparâmetros simplificada para evitar overfitting
 PARAM_GRID: Dict[str, Any] = {
-    "scaler": [StandardScaler(), MinMaxScaler(), RobustScaler(), "passthrough"],
+    "scaler": [StandardScaler(), MinMaxScaler(), "passthrough"],
     "classifier__max_depth": [2, 3, 4, 5, 6, 7, 8],
-    "classifier__min_samples_split": [5, 10, 20, 25],
-    "classifier__min_samples_leaf": [5, 10, 20, 25],
+    "classifier__min_samples_split": [5, 10, 20],
+    "classifier__min_samples_leaf": [5, 10, 20],
     "classifier__criterion": ["gini", "entropy"],
     "classifier__class_weight": [None, "balanced"],
 }

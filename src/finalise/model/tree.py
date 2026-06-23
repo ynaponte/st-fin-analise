@@ -4,13 +4,9 @@ tree.py
 Treinamento da árvore de decisão classificatória.
 
 Fluxo:
-  1. Alinhamento e limpeza de X (features) e y (rótulos +1/-1).
-  2. Embaralhamento (shuffle) dos dados — a árvore aprende a relação
-     features→classe sem nenhuma noção de causalidade temporal.
-  3. Split 80-20 (treino / teste), mantendo a proporção de classes.
-  4. GridSearchCV (5-fold estratificado) sobre hiperparâmetros relevantes
-     da DecisionTreeClassifier.
-  5. Retorna o melhor estimador, os hiperparâmetros, as acurácias e as
+  1. Recebe X_train e y_train já separados temporalmente pelo chamador.
+  2. GridSearchCV com TimeSeriesSplit para evitar vazamento de dados.
+  3. Retorna o melhor estimador, os hiperparâmetros, os scores CV e as
      importâncias de features.
 """
 
@@ -18,109 +14,54 @@ import pandas as pd
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
-from sklearn.utils import shuffle as sk_shuffle
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from typing import Dict, Tuple, Any
 
 
-# Grade de hiperparâmetros para o GridSearchCV
+# Grade de hiperparâmetros simplificada para evitar overfitting
 PARAM_GRID: Dict[str, Any] = {
-    "classifier__max_depth": [3, 5, 7, 10, None],
-    "classifier__min_samples_split": [2, 5, 10],
-    "classifier__min_samples_leaf": [1, 2, 4],
+    "scaler": [StandardScaler(), MinMaxScaler(), RobustScaler(), "passthrough"],
+    "classifier__max_depth": [2, 3, 4, 5, 6, 7, 8],
+    "classifier__min_samples_split": [5, 10, 20, 25],
+    "classifier__min_samples_leaf": [5, 10, 20, 25],
     "classifier__criterion": ["gini", "entropy"],
     "classifier__class_weight": [None, "balanced"],
 }
 
 
 def fit(
-    X: pd.DataFrame,
-    y: pd.Series,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
     *,
     random_state: int = 42,
-    test_size: float = 0.20,
     cv_folds: int = 5,
-) -> Tuple[Pipeline, Dict[str, Any], float, float, Dict[str, float]]:
+    horizon: int = 1,
+) -> Tuple[Pipeline, Dict[str, Any], float, Dict[str, float]]:
     """
-    Treina um DecisionTreeClassifier com busca de hiperparâmetros via GridSearchCV.
+    Treina um DecisionTreeClassifier com TimeSeriesSplit.
 
-    Parameters
-    ----------
-    X : pd.DataFrame
-        Matriz de features já construída (sem NaNs).
-    y : pd.Series
-        Rótulos +1/-1 gerados pelo labeler (mesmo índice de X).
-    random_state : int
-        Semente para reprodutibilidade do shuffle e do split.
-    test_size : float
-        Fração reservada para teste (padrão 0.20 → split 80-20).
-    cv_folds : int
-        Número de folds para a validação cruzada estratificada.
-
-    Returns
-    -------
-    best_model : DecisionTreeClassifier
-        Modelo treinado com os melhores hiperparâmetros.
-    best_params : dict
-        Hiperparâmetros selecionados pelo GridSearchCV.
-    train_accuracy : float
-        Acurácia no conjunto de treino.
-    test_accuracy : float
-        Acurácia no conjunto de teste.
-    feature_importances : dict
-        Importância de cada feature (baseada em impureza de Gini/Entropia).
-
-    Raises
-    ------
-    ValueError
-        Se X ou y estiverem vazios ou sem sobreposição de índices.
+    Usa TimeSeriesSplit com gap=horizon para garantir que a validação
+    no GridSearchCV nunca esbarre nos rótulos de treino do mesmo período.
     """
-    if X.empty or y.empty:
-        raise ValueError("X ou y não podem ser vazios para o treinamento.")
+    if X_train.empty or y_train.empty:
+        raise ValueError("X_train ou y_train não podem ser vazios para o treinamento.")
 
-    # ── 1. Alinhamento e remoção de NaNs ──────────────────────────────────
-    common_idx = X.index.intersection(y.index)
-    if len(common_idx) == 0:
-        raise ValueError(
-            "X e y não possuem índices em comum. Verifique o alinhamento temporal."
-        )
+    feature_names = list(X_train.columns)
+    X_vals = X_train.values
+    y_vals = y_train.values
 
-    X_aligned = X.loc[common_idx].copy()
-    y_aligned = y.loc[common_idx].copy()
-
-    data = pd.concat([X_aligned, y_aligned], axis=1).dropna()
-    if data.empty:
-        raise ValueError(
-            "Sem observações válidas após remover NaNs. "
-            "Verifique os lags e o alinhamento entre features e rótulos."
-        )
-
-    X_clean = data[X.columns].values
-    y_clean = data["label"].values
-    feature_names = list(X.columns)
-
-    # ── 2. Embaralhamento ─────────────────────────────────────────────────
-    # Quebra qualquer estrutura temporal: a árvore aprende
-    # padrão features→classe, não dependência temporal.
-    X_shuffled, y_shuffled = sk_shuffle(X_clean, y_clean, random_state=random_state)
-
-    # ── 3. Split 80-20 estratificado ──────────────────────────────────────
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_shuffled,
-        y_shuffled,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=y_shuffled,
-    )
-
-    # ── 4. GridSearchCV ───────────────────────────────────────────────────
     base_pipeline = Pipeline([
         ('scaler', StandardScaler()),
         ('classifier', DecisionTreeClassifier(random_state=random_state))
     ])
-    cv_strategy = StratifiedKFold(
-        n_splits=cv_folds, shuffle=True, random_state=random_state
+    
+    # ── TimeSeriesSplit para evitar Data Leakage ──────────────────────────
+    # gap=horizon garante que a janela de validação não pegue retornos futuros
+    # que estavam sendo usados no fold de treino.
+    cv_strategy = TimeSeriesSplit(
+        n_splits=cv_folds, 
+        gap=horizon
     )
 
     grid_search = GridSearchCV(
@@ -129,25 +70,21 @@ def fit(
         scoring="accuracy",
         cv=cv_strategy,
         n_jobs=-1,
-        refit=True,         # Re-treina o melhor modelo em todo o conjunto de treino
+        refit=True,
         verbose=0,
     )
-    grid_search.fit(X_train, y_train)
+    grid_search.fit(X_vals, y_vals)
 
     best_model: Pipeline = grid_search.best_estimator_
     best_params: Dict[str, Any] = grid_search.best_params_
+    cv_score = float(grid_search.best_score_)
 
-    # ── 5. Métricas de acurácia ───────────────────────────────────────────
-    train_accuracy = float(best_model.score(X_train, y_train))
-    test_accuracy = float(best_model.score(X_test, y_test))
-
-    # ── 6. Importância de features ────────────────────────────────────────
     dt_model = best_model.named_steps["classifier"]
     feature_importances: Dict[str, float] = dict(
         zip(feature_names, dt_model.feature_importances_)
     )
 
-    return best_model, best_params, train_accuracy, test_accuracy, feature_importances
+    return best_model, best_params, cv_score, feature_importances
 
 
 __all__ = ["fit", "PARAM_GRID"]

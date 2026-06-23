@@ -43,49 +43,51 @@ for ticker, series in prices_dict.items():
     print(f"{ticker}: {len(series)} registros, de {series.index.min().date()} a {series.index.max().date()}")
 
 # %% [markdown]
-# ## Fase 1: Análise Causal Multicritério e Seleção de Preditores
-# A nova pipeline foca na Transferência de Informação (TE) testada contra Surrogates por deslocamento circular.
+# ## Fase 1: Análise Causal e Seleção de Preditores (TE + Surrogates)
+# A pipeline seleciona preditores por Transfer Entropy testada contra Surrogates circulares.
+# O lag_consensus identifica o horizonte temporal de máxima transferência de informação.
 
-print("\n--- Iniciando Pipeline de Seleção (Focado em TE) ---")
+print("\n--- Iniciando Pipeline de Seleção (TE Surrogates v5) ---")
 pa = PredictorsAnalysis(prices_dict, config)
 pa_result = pa.run()
 
-# O fluxo de pa.run() exibe relatórios ricos no terminal e gera os gráficos no navegador.
-# O resultado está consolidado em pa_result.
-
 # %% [markdown]
 # ## Fase 2: Modelagem Preditiva e Backtest (Model)
-# Vamos treinar o modelo e fazer validação usando janela deslizante (sliding window) ou split padrão, para verificar se o modelo treinado bate uma estratégia aleatória (agentes de mercado).
+# O modelo é um bot de trading: prevê a direção dos próximos `lag_consensus` dias.
+# A validação usa dados out-of-sample com posições não-sobrepostas.
 
 if len(pa_result.selected) == 0:
     print("\n[Aviso] Nenhum preditor foi selecionado na análise causal. O modelo não pode ser executado.")
 else:
     print("\n--- Iniciando Modelagem e Validação (Backtest) ---")
     
-    # Extraímos a série alvo em log-retornos (k=1)
+    # Série alvo em log-retornos diários (k=1)
     target_series = log_returns(prices_dict[config.target_ticker], k=1)
     
-    # Inicializa o classificador com os preditores que sobreviveram aos gates
+    # O horizonte de previsão é o lag_consensus da análise de TE
+    horizon = pa_result.lag_consensus
+    print(f" - Horizonte de previsão: {horizon} dias (lag_consensus da análise de TE)")
+    
+    # Inicializa o classificador
     m = Model(
         pa_result.selected, 
         target_series, 
         config, 
-        horizon=1,
+        horizon=horizon,
         generated_features=pa_result.generated_features,
-        lag_consensus=pa_result.lag_consensus
     )
     
-    print(" - Preparando matriz de features (X, y)...")
-    X_clean, y_clean, y_returns = m.build_data()
+    print(" - Preparando dados (features + labels forward-looking + split temporal)...")
+    X_train, X_test, y_train, y_test_labels, y_test_fwd = m.build_data()
+    print(f"   Treino: {len(X_train)} obs | Teste: {len(X_test)} obs (out-of-sample)")
     
-    print(" - Treinando a Árvore de Decisão...")
-    m.fit(X_clean, y_clean)
+    print(" - Treinando a Árvore de Decisão (GridSearchCV)...")
+    m.fit(X_train, y_train)
     
-    print(" - Executando Random Walk Backtest e Calculando Métricas...")
-    m.validate(X_clean, y_returns)
+    print(" - Executando Random Walk Backtest (posições não-sobrepostas)...")
+    m.validate(X_test, y_test_fwd)
     
-    # Exibir o relatório do modelo, incluindo a distribuição do random walk
-    # Passamos pa_result para satisfazer a exibição de preditores selecionados.
+    # Relatório completo
     m_figs = m.report(predictor_analysis=pa_result)
     for name, fig in m_figs.items():
         fig.show()

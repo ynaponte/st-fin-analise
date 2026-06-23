@@ -3,48 +3,76 @@ labeler.py
 ----------
 Rotulador de direção da série alvo para o classificador.
 
-Como as features em X já são deslocadas temporalmente no passado (shift(lag_tau)),
-a observação X no instante t já representa informações estritamente anteriores a t.
-Portanto, o rótulo y no instante t deve ser simplesmente a direção do ativo alvo 
-no próprio instante t.
+O rótulo indica a *direção futura* do ativo ao longo do horizonte de previsão
+(`horizon`, tipicamente = lag_consensus da análise de TE).
 
-Se o log-retorno(t) > 0  →  classe +1 (comprar, o preço subiu)
-Se o log-retorno(t) <= 0 →  classe -1 (vender, o preço caiu ou ficou igual)
+Para horizon = 1:
+    label(t) = sign(r(t+1))
 
-Essa lógica alinha perfeitamente o objetivo da árvore de decisão com o 
-P&L do random walk em validation.py (que recompensa sinal(t) * retorno(t)).
+Para horizon > 1:
+    forward_return(t) = r(t+1) + r(t+2) + ... + r(t+horizon)
+                      = log(P(t+horizon) / P(t))
+    label(t) = sign(forward_return(t))
+
+Isso garante que o modelo é treinado para prever exatamente o que o
+bot de trading precisa saber: "devo comprar ou vender AGORA, para fechar
+a posição em `horizon` dias?"
+
+NOTA: os últimos `horizon` elementos terão rótulo NaN (futuro indisponível)
+e devem ser descartados antes do treino.
 """
 
 import pandas as pd
 import numpy as np
 
 
-def label(series: pd.Series) -> pd.Series:
+def label(series: pd.Series, horizon: int = 1) -> pd.Series:
     """
-    Rotula a série de log-retornos como +1 (alta) ou -1 (baixa).
-
-    Parameters
-    ----------
-    series : pd.Series
-        Série de log-retornos do ativo alvo, indexada por data.
-
-    Returns
-    -------
-    pd.Series
-        Série de rótulos inteiros (+1 ou -1), com o mesmo índice da entrada.
+    Rotula a série de log-retornos como +1 (compra) ou -1 (venda)
+    baseando-se na direção do retorno acumulado nos próximos `horizon` dias.
     """
     if series.empty:
         raise ValueError("A série alvo não pode estar vazia.")
+    if horizon < 1:
+        raise ValueError(f"Horizonte deve ser >= 1, recebido: {horizon}")
 
-    # Rótulo: +1 se o retorno é positivo, -1 caso contrário
+    if horizon == 1:
+        forward_return = series.shift(-1)
+    else:
+        cumret = series.cumsum()
+        forward_return = cumret.shift(-horizon) - cumret
+
     labels = pd.Series(
-        np.where(series > 0, 1, -1),
+        np.where(forward_return > 0, 1, -1),
         index=series.index,
         name="label",
-        dtype=int,
+        dtype=float,
     )
-
+    labels.iloc[-horizon:] = np.nan
     return labels
 
 
-__all__ = ["label"]
+def forward_returns(series: pd.Series, horizon: int = 1) -> pd.Series:
+    """Calcula o retorno acumulado forward para o horizonte."""
+    if horizon == 1:
+        fwd = series.shift(-1)
+    else:
+        cumret = series.cumsum()
+        fwd = cumret.shift(-horizon) - cumret
+
+    fwd.iloc[-horizon:] = np.nan
+    fwd.name = "forward_return"
+    return fwd
+
+
+def next_day_return(series: pd.Series) -> pd.Series:
+    """
+    Retorna o retorno logarítmico do dia seguinte: r(t+1).
+    Usado para o backtest de rebalanceamento diário.
+    """
+    nxt = series.shift(-1)
+    nxt.name = "next_day_return"
+    return nxt
+
+
+__all__ = ["label", "forward_returns", "next_day_return"]

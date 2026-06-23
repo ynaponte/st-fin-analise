@@ -1,26 +1,56 @@
+"""
+features.py
+-----------
+Construção da matriz de features X a partir dos candidatos selecionados.
+
+As features representam os valores CORRENTES dos preditores em cada instante t.
+Não há deslocamento temporal (shift) aplicado aqui — o alinhamento causal é
+garantido pelo labeler, que rotula com base no retorno FUTURO do alvo
+(forward-looking labels com horizon = lag_consensus).
+
+Esquema temporal:
+    Features em t  = X(t)  → valores observáveis no instante t
+    Label em t     = sign(retorno do alvo de t+1 a t+horizon)  → futuro
+
+Não há look-ahead bias porque:
+    - As features usam apenas informação presente/passada
+    - O alvo (label) é futuro, exatamente o que queremos prever
+"""
+
 import pandas as pd
-from typing import List, Tuple
+from typing import List
 from finalise.workflows.predictors_analysis import SelectedCandidate
+
 
 def build(selected: List[SelectedCandidate]) -> pd.DataFrame:
     """
     Constrói a matriz de features X a partir dos candidatos selecionados.
-    Para cada candidato, a feature correspondente é a sua série temporal 
-    deslocada pelo seu atraso ótimo (lag_tau).
-    Garante que não há look-ahead bias (violação causal), pois o valor em t 
-    utiliza apenas informações de t - lag_tau.
+
+    Para cada candidato, a feature é a sua série temporal no instante t
+    (sem deslocamento). O lag_tau permanece armazenado no SelectedCandidate
+    para fins informativos (horizonte de previsão), mas não é usado para
+    shift nas features.
+
+    Parameters
+    ----------
+    selected : list of SelectedCandidate
+        Preditores selecionados pela PredictorsAnalysis.
+
+    Returns
+    -------
+    pd.DataFrame
+        Matriz de features, indexada por data.
     """
     if not selected:
-        # Retorna DataFrame vazio se não houver candidatos
         return pd.DataFrame()
-        
+
     features = {}
     for cand in selected:
-        col_name = f"{cand.ticker}_{cand.component}_lag{cand.lag_tau}"
-        # Shift data forward by lag_tau, so value at t is series[t - lag_tau]
-        features[col_name] = cand.series.shift(cand.lag_tau)
-        
-    # Concat along columns
+        col_name = f"{cand.ticker}_{cand.component}"
+        features[col_name] = cand.series
+
     X = pd.DataFrame(features)
-    
     return X
+
+
+__all__ = ["build"]
